@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="Assets/app_icon.png" alt="Key Trigger Logo" width="128" height="128" />
+
 # Key Trigger
 
 ### Drive like you have a controller — using just your keyboard!
