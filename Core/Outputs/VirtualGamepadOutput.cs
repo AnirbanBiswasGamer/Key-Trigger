@@ -51,6 +51,15 @@ namespace KeyTrigger.Core.Outputs
         public bool IsAvailable => _isAvailable;
         public string StatusMessage => _statusMessage;
 
+        public int UserIndex
+        {
+            get
+            {
+                try { return _controller?.UserIndex ?? -1; }
+                catch { return -1; }
+            }
+        }
+
         public void Initialize()
         {
             lock (_syncLock)

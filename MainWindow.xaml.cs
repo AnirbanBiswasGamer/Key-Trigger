@@ -267,11 +267,23 @@ namespace KeyTrigger
             {
                 if (isViGemAvailable)
                 {
-                    BadgeViGemStatus.Background = new SolidColorBrush(Color.FromArgb(0x30, 0x1A, 0x38, 0x28));
-                    BadgeViGemStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
-                    TxtViGemBadge.Text = "CONNECTED";
-                    TxtViGemBadge.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
-                    TxtViGemStatusMessage.Text = "ViGEmBus driver is active.";
+                    int slot = _engine.GamepadOutput.UserIndex;
+                    if (slot > 0)
+                    {
+                        BadgeViGemStatus.Background = new SolidColorBrush(Color.FromArgb(0x30, 0x3F, 0x2E, 0x1A));
+                        BadgeViGemStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
+                        TxtViGemBadge.Text = $"PLAYER {slot + 1} (SLOT {slot})";
+                        TxtViGemBadge.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
+                        TxtViGemStatusMessage.Text = $"Warning: Connected as Player {slot + 1}. GRID only listens to Player 1! Unplug other controllers.";
+                    }
+                    else
+                    {
+                        BadgeViGemStatus.Background = new SolidColorBrush(Color.FromArgb(0x30, 0x1A, 0x38, 0x28));
+                        BadgeViGemStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                        TxtViGemBadge.Text = "CONNECTED (PLAYER 1)";
+                        TxtViGemBadge.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                        TxtViGemStatusMessage.Text = "Connected as Player 1 (Virtual Xbox 360 Controller). Ready for GRID!";
+                    }
                     if (TxtBtnViGemAction != null) TxtBtnViGemAction.Text = "Reinstall Driver";
                     if (BtnDownloadViGem != null) BtnDownloadViGem.Visibility = Visibility.Visible;
                 }
