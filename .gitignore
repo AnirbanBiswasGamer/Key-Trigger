@@ -1,0 +1,22 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+dist/
+
+# Visual Studio files
+.vs/
+*.user
+*.suo
+*.userprefs
+*.pidb
+*.booproj
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db

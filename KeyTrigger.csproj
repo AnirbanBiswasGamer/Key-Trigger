@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>KeyTrigger</AssemblyName>
+    <RootNamespace>KeyTrigger</RootNamespace>
+    <ApplicationIcon>Assets\app_icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Title>Key Trigger</Title>
+    <Product>Key Trigger</Product>
+    <Description>Progressive Keyboard-to-Analog Xbox 360 Controller Trigger &amp; Steering Emulator</Description>
+    <Company>Key Trigger</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app_icon.ico" />
+    <Resource Include="Assets\app_icon.png" />
+    <Resource Include="Assets\logo_header.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
+  </ItemGroup>
+
+</Project>

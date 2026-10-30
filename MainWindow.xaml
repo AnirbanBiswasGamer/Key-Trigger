@@ -1,0 +1,1596 @@
+<Window x:Class="KeyTrigger.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        mc:Ignorable="d"
+        Title="Key Trigger - Xbox 360 Progressive Input Emulator"
+        Icon="pack://application:,,,/Assets/app_icon.ico"
+        Height="720" Width="990"
+        MinHeight="640" MinWidth="880"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        Background="Transparent"
+        Foreground="#F8FAFC"
+        FontFamily="Segoe UI"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True">
+
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="46" CornerRadius="10" GlassFrameThickness="0" ResizeBorderThickness="6" />
+    </shell:WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <!-- Windows 11 Frosted Glass Monochrome Palette (No Colors, Even Highlights) -->
+        <SolidColorBrush x:Key="BgPrimary" Color="#00000000" />
+        <SolidColorBrush x:Key="BgSidebar" Color="#18000000" />
+        <SolidColorBrush x:Key="BgCard" Color="#12FFFFFF" />
+        <SolidColorBrush x:Key="BgCardHover" Color="#1EFFFFFF" />
+        <SolidColorBrush x:Key="BgInput" Color="#18FFFFFF" />
+        <SolidColorBrush x:Key="BorderBrushColor" Color="#22FFFFFF" />
+        <SolidColorBrush x:Key="BorderSubtle" Color="#15FFFFFF" />
+        <SolidColorBrush x:Key="BorderActive" Color="#45FFFFFF" />
+
+        <!-- Crisp Monochrome (No Colors, Even Highlights) -->
+        <SolidColorBrush x:Key="AccentPrimary" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="AccentSecondary" Color="#CCCCCC" />
+        <SolidColorBrush x:Key="StatusActive" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="StatusDisabled" Color="#666666" />
+        <SolidColorBrush x:Key="StatusWarning" Color="#AAAAAA" />
+
+        <!-- Monochrome Channel Palette -->
+        <SolidColorBrush x:Key="ChannelThrottle" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ChannelBrake" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ChannelSteerLeft" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ChannelSteerRight" Color="#FFFFFF" />
+
+        <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="TextSecondary" Color="#A5ACB8" />
+        <SolidColorBrush x:Key="TextMuted" Color="#717888" />
+
+        <!-- Crisp Vector Geometries (No text emojis) -->
+        <StreamGeometry x:Key="IconHome">M3 10.5L12 3l9 7.5V20a1.5 1.5 0 01-1.5 1.5h-4.5a1 1 0 01-1-1v-4a1 1 0 00-1-1h-2a1 1 0 00-1 1v4a1 1 0 01-1 1H4.5A1.5 1.5 0 013 20v-9.5z</StreamGeometry>
+        <StreamGeometry x:Key="IconThrottle">M13 2L3 14h7v8l10-12h-7l3-8z</StreamGeometry>
+        <StreamGeometry x:Key="IconBrake">M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2zm1.42 2L4 9.28v5.44L9.28 20h5.44L20 14.72V9.28L14.72 4H9.28zM8 11h8v2H8v-2z</StreamGeometry>
+        <StreamGeometry x:Key="IconSteering">M12 2a10 10 0 100 20 10 10 0 000-20zm0 2c3.9 0 7.15 2.8 7.86 6.5h-3.92a4 4 0 00-3.94-3.5V4zm-1 0v3a4 4 0 00-3.94 3.5H3.14C3.85 6.8 7.1 4 11 4zm-7.86 8.5h4.08A4 4 0 0011 16v4c-4.42-.5-7.9-4-8.86-7.5zm16.72 0c-.96 3.5-4.44 7-8.86 7.5v-4a4 4 0 003.78-3.5h4.08z</StreamGeometry>
+        <StreamGeometry x:Key="IconGamepad">M6 5h12a5 5 0 015 5v5a4 4 0 01-6.8 2.8L13.8 15h-3.6l-2.4 2.8A4 4 0 011 15v-5a5 5 0 015-5zm-1 7H3v2a2 2 0 003.4 1.4L8.2 13H5zm14 0h-3.2l1.8 2.4A2 2 0 0021 14v-2h-2zM7 9v1H6v1h1v1h1v-1h1v-1H8V9H7zm10 0a1 1 0 100 2 1 1 0 000-2zm-2 2a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 100 2 1 1 0 000-2zm-2 2a1 1 0 100 2 1 1 0 000-2z</StreamGeometry>
+        <StreamGeometry x:Key="IconProfiles">M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5</StreamGeometry>
+        <StreamGeometry x:Key="IconSettings">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.44.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z</StreamGeometry>
+        <StreamGeometry x:Key="IconKeyboard">M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 5H4v-2h3v2zm0-3H4v-2h3v2zm0-3H4V8h3v2zm13 8h-9v-2h9v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2zm-3 3h-2v-2h2v2zm0-3h-2V8h2v2z</StreamGeometry>
+        <StreamGeometry x:Key="IconTimer">M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z</StreamGeometry>
+        <StreamGeometry x:Key="IconGraph">M3.5 18.5l6-6 4 4L22 6.92l-1.41-1.41-7.09 7.09-4-4L2 16.09l1.5 2.41z</StreamGeometry>
+        <StreamGeometry x:Key="IconTarget">M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16zm-1-13h2v3h-2V7zm0 10h2v3h-2v-3zm-6-6h3v2H5v-2zm12 0h3v2h-3v-2z</StreamGeometry>
+        <StreamGeometry x:Key="IconSave">M17 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6V6z</StreamGeometry>
+        <StreamGeometry x:Key="IconPlus">M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z</StreamGeometry>
+        <StreamGeometry x:Key="IconClose">M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z</StreamGeometry>
+        <StreamGeometry x:Key="IconEdit">M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z</StreamGeometry>
+        <StreamGeometry x:Key="IconMinimize">M5 11h14v2H5z</StreamGeometry>
+        <StreamGeometry x:Key="IconArrowLeft">M15.41 16.59L10.83 12l4.58-4.59L14 6l-6 6 6 6 1.41-1.41z</StreamGeometry>
+        <StreamGeometry x:Key="IconArrowRight">M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z</StreamGeometry>
+        <StreamGeometry x:Key="IconRemap">M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm4-3c-.83 0-1.5-.67-1.5-1.5S18.67 9 19.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z</StreamGeometry>
+
+        <!-- Clean Modern Slider Style -->
+        <Style x:Key="ModernSlider" TargetType="Slider">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <Border Height="4" CornerRadius="2" Background="#222B3B" VerticalAlignment="Center" />
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Height="4" CornerRadius="2" Background="{StaticResource AccentPrimary}" VerticalAlignment="Center" />
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Grid Width="16" Height="16" Cursor="Hand">
+                                                    <Ellipse Fill="#FFFFFF" Stroke="{StaticResource AccentPrimary}" StrokeThickness="2.5" />
+                                                </Grid>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Sidebar Navigation Button Style -->
+        <Style x:Key="NavBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="38" />
+            <Setter Property="Margin" Value="0,2,0,2" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#302A3549" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Card Action Button Style -->
+        <Style x:Key="CardActionBtn" TargetType="Button">
+            <Setter Property="Background" Value="#40202838" />
+            <Setter Property="BorderBrush" Value="#2D384C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#602B374C" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentPrimary}" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Preset Chip Button Style -->
+        <Style x:Key="PresetChipBtn" TargetType="Button">
+            <Setter Property="Background" Value="#301E2738" />
+            <Setter Property="BorderBrush" Value="#293448" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#5028374D" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentPrimary}" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentPrimary}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Sub-tab pill button style (for steering Left/Right) -->
+        <Style x:Key="SubTabPillBtn" TargetType="Button">
+            <Setter Property="Background" Value="#35161C26" />
+            <Setter Property="BorderBrush" Value="#222A3A" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Padding" Value="16,6" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Modern Subtle ScrollBar Styles -->
+        <Style x:Key="ModernScrollBarThumb" TargetType="{x:Type Thumb}">
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                        <Border x:Name="ThumbBorder"
+                                Background="#25FFFFFF"
+                                CornerRadius="3"
+                                Margin="1,0,1,0" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#45FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#65FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ModernScrollBarPageButton" TargetType="{x:Type RepeatButton}">
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                        <Rectangle Fill="Transparent" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="{x:Type ScrollBar}">
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="6" />
+                    <Setter Property="Height" Value="Auto" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Grid Background="Transparent">
+                                    <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                        <Track.DecreaseRepeatButton>
+                                            <RepeatButton Style="{StaticResource ModernScrollBarPageButton}" Command="ScrollBar.PageUpCommand" />
+                                        </Track.DecreaseRepeatButton>
+                                        <Track.Thumb>
+                                            <Thumb Style="{StaticResource ModernScrollBarThumb}" />
+                                        </Track.Thumb>
+                                        <Track.IncreaseRepeatButton>
+                                            <RepeatButton Style="{StaticResource ModernScrollBarPageButton}" Command="ScrollBar.PageDownCommand" />
+                                        </Track.IncreaseRepeatButton>
+                                    </Track>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height" Value="6" />
+                    <Setter Property="Width" Value="Auto" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Grid Background="Transparent">
+                                    <Track x:Name="PART_Track" IsDirectionReversed="False">
+                                        <Track.DecreaseRepeatButton>
+                                            <RepeatButton Style="{StaticResource ModernScrollBarPageButton}" Command="ScrollBar.PageLeftCommand" />
+                                        </Track.DecreaseRepeatButton>
+                                        <Track.Thumb>
+                                            <Thumb Style="{StaticResource ModernScrollBarThumb}" />
+                                        </Track.Thumb>
+                                        <Track.IncreaseRepeatButton>
+                                            <RepeatButton Style="{StaticResource ModernScrollBarPageButton}" Command="ScrollBar.PageRightCommand" />
+                                        </Track.IncreaseRepeatButton>
+                                    </Track>
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Modern Dark ComboBoxItem Style -->
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="4" Padding="10,6" Margin="2,1">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#253247" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#1E2A3B" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentPrimary}" />
+                                <Setter Property="FontWeight" Value="SemiBold" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ToggleButton for ComboBox -->
+        <ControlTemplate x:Key="ComboBoxToggleButtonTemplate" TargetType="ToggleButton">
+            <Grid>
+                <Border x:Name="Border"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="6" />
+                <Path x:Name="Arrow"
+                      Data="M7 10l5 5 5-5z"
+                      Fill="#94A3B8"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center"
+                      Margin="0,0,10,0"
+                      Width="10" Height="6"
+                      Stretch="Fill" />
+            </Grid>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource AccentPrimary}" />
+                    <Setter TargetName="Arrow" Property="Fill" Value="#FFFFFF" />
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource AccentPrimary}" />
+                    <Setter TargetName="Arrow" Property="Fill" Value="{StaticResource AccentPrimary}" />
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- Modern Dark ComboBox Style -->
+        <Style TargetType="ComboBox">
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="OverridesDefaultStyle" Value="True" />
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#F8FAFC" />
+            <Setter Property="Background" Value="#151C27" />
+            <Setter Property="BorderBrush" Value="#2D384C" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton"
+                                          Template="{StaticResource ComboBoxToggleButtonTemplate}"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          Focusable="False"
+                                          IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press" />
+                            <ContentPresenter x:Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              Margin="10,3,28,3"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left" />
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Fade"
+                                   VerticalOffset="3">
+                                <Border x:Name="DropDownBorder"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="#121822"
+                                        BorderBrush="#2D384C"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Padding="3">
+                                    <ScrollViewer CanContentScroll="True" SnapsToDevicePixels="True">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="95" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="BorderBrush" Value="{StaticResource AccentPrimary}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Caption Button Styles for Window Controls (Proper Windows 11 Styling) -->
+        <Style x:Key="CaptionBtnMinimizeStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
+                            <Path x:Name="Icon"
+                                  Data="{StaticResource IconMinimize}"
+                                  Fill="#94A3B8"
+                                  Width="11" Height="2"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A3548" />
+                                <Setter TargetName="Icon" Property="Fill" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1E2736" />
+                                <Setter TargetName="Icon" Property="Fill" Value="#CBD5E1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CaptionBtnCloseStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
+                            <Path x:Name="Icon"
+                                  Data="{StaticResource IconClose}"
+                                  Fill="#94A3B8"
+                                  Width="10" Height="10"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E81123" />
+                                <Setter TargetName="Icon" Property="Fill" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#B8101C" />
+                                <Setter TargetName="Icon" Property="Fill" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Step Button Style for Manual Time Selection -->
+        <Style x:Key="StepBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="#301E2738" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushColor}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimary}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinWidth" Value="38" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#5028374D" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentPrimary}" />
+                                <Setter Property="Foreground" Value="{StaticResource AccentPrimary}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+            <!-- Axis Toggle Pill Style -->
+        <Style x:Key="AxisTogglePillStyle" TargetType="Button">
+            <Setter Property="Background" Value="#20FFFFFF" />
+            <Setter Property="BorderBrush" Value="#40FFFFFF" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="14" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#35FFFFFF" />
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#60FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+
+
+    <!-- Main Container: Windows 11 Fluent Translucent Acrylic Glass Surface -->
+    <Border Background="#D610141D" CornerRadius="10" BorderBrush="#252D3D" BorderThickness="1">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <!-- Left Sidebar (fixed 215px) -->
+                <ColumnDefinition Width="215" />
+                <!-- Main Content Area -->
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- ================= LEFT SIDEBAR ================= -->
+            <Border Grid.Column="0" Background="{StaticResource BgSidebar}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="0,0,1,0" CornerRadius="10,0,0,10">
+                <Grid Margin="14,14,14,14">
+                    <Grid.RowDefinitions>
+                        <!-- App Brand / Logo -->
+                        <RowDefinition Height="Auto" />
+                        <!-- Nav Items -->
+                        <RowDefinition Height="*" />
+                        <!-- Master Switch & Footer -->
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- App Logo & Title -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="4,4,0,24">
+                        <Border Width="30" Height="30" Margin="0,0,9,0" VerticalAlignment="Center">
+                            <Image Source="pack://application:,,,/Assets/logo_header.png" Width="30" Height="30" RenderOptions.BitmapScalingMode="HighQuality" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="KEY" FontSize="15" FontWeight="Black" Foreground="{StaticResource TextPrimary}" />
+                                <TextBlock Text="TRIGGER" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource AccentPrimary}" Margin="4,0,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- Navigation Items with Clean Modern Vector Icons -->
+                    <StackPanel Grid.Row="1" VerticalAlignment="Top">
+                        <!-- Home / Overview -->
+                        <Button x:Name="NavBtnHome" Click="NavBtn_Click" Tag="Home" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconHome}" Fill="{StaticResource TextSecondary}" Width="15" Height="15" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Home" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Throttle -->
+                        <Button x:Name="NavBtnThrottle" Click="NavBtn_Click" Tag="Throttle" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconThrottle}" Fill="{StaticResource ChannelThrottle}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Throttle" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Brake -->
+                        <Button x:Name="NavBtnBrake" Click="NavBtn_Click" Tag="Brake" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconBrake}" Fill="{StaticResource ChannelBrake}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Brake" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Steering -->
+                        <Button x:Name="NavBtnSteering" Click="NavBtn_Click" Tag="Steering" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconSteering}" Fill="{StaticResource ChannelSteerLeft}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Steering" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Remap / Buttons -->
+                        <Button x:Name="NavBtnRemap" Click="NavBtn_Click" Tag="Remap" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconRemap}" Fill="{StaticResource TextSecondary}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Remap" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Games / Auto-Detect -->
+                        <Button x:Name="NavBtnGames" Click="NavBtn_Click" Tag="Games" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconGamepad}" Fill="{StaticResource AccentPrimary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Auto-Detect" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Profiles -->
+                        <Button x:Name="NavBtnProfiles" Click="NavBtn_Click" Tag="Profiles" Style="{StaticResource NavBtnStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconProfiles}" Fill="{StaticResource TextSecondary}" Width="13" Height="13" Stretch="Uniform" Margin="0,0,11,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Profiles" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Bottom Master Toggle & Info (Disabled by Default on Startup) -->
+                    <StackPanel Grid.Row="2" VerticalAlignment="Bottom">
+                        <!-- Universal Save Button -->
+                        <Button x:Name="BtnUniversalSave" Click="BtnUniversalSave_Click" Style="{StaticResource CardActionBtn}" HorizontalAlignment="Stretch" Margin="0,0,0,8" Padding="12,10" Cursor="Hand" ToolTip="Save all settings, curves, key bindings and remaps to active profile">
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Path Data="{StaticResource IconSave}" Fill="#FFFFFF" Width="12" Height="12" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Save Changes" FontWeight="Bold" FontSize="12" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button x:Name="BtnMasterToggle" Click="BtnMasterToggle_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True" Cursor="Hand" Background="Transparent" BorderThickness="0" Padding="0" Margin="0,0,0,12">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <ContentPresenter />
+                                </ControlTemplate>
+                            </Button.Template>
+                            <Border x:Name="PillMasterToggle" Background="#1A212D" BorderBrush="#2A3547" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Ellipse x:Name="DotMasterStatus" Grid.Column="0" Width="8" Height="8" Fill="#64748B" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="TxtMasterStatus" Grid.Column="1" Text="DISABLED" FontWeight="Bold" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center" />
+                                    <Border Grid.Column="2" Background="#15FFFFFF" CornerRadius="3" Padding="4,1" VerticalAlignment="Center">
+                                        <TextBlock Text="F8" FontSize="9" FontWeight="Bold" Foreground="#94A3B8" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Button>
+
+
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ================= MAIN CONTENT AREA ================= -->
+            <Grid Grid.Column="1">
+                <Grid.RowDefinitions>
+                    <!-- Window Controls (Minimize/Close) & Toast -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Page Content (ScrollViewer) -->
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Top Window Controls Bar -->
+                <Grid Grid.Row="0" Height="42" Margin="0,0,10,0">
+                    <!-- Toast Notification Banner -->
+                    <Border x:Name="ProfileToastBanner" Visibility="Collapsed" Background="#351F2A3D" BorderBrush="{StaticResource AccentPrimary}" BorderThickness="1" CornerRadius="6" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="28,0,0,0" Padding="12,4" Height="30">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Path Data="{StaticResource IconGamepad}" Fill="{StaticResource AccentPrimary}" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtToastProfileName" FontWeight="Bold" FontSize="11" Foreground="#ECEFF4" Margin="0,0,4,0" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TxtToastDetails" FontSize="10" Foreground="#9CA3AF" VerticalAlignment="Center" />
+                            <Button x:Name="BtnCloseToast" Click="BtnCloseToast_Click" shell:WindowChrome.IsHitTestVisibleInChrome="True" Background="Transparent" Foreground="#6B7280" BorderThickness="0" Margin="8,0,0,0" Padding="4,0" Cursor="Hand" VerticalAlignment="Center">
+                                <Path Data="{StaticResource IconClose}" Fill="#94A3B8" Width="8" Height="8" Stretch="Uniform" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Minimize / Close Buttons with Proper Windows 11 Styling -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button x:Name="BtnMinimize" Click="BtnMinimize_Click" Style="{StaticResource CaptionBtnMinimizeStyle}" Margin="0,0,4,0" ToolTip="Minimize" />
+                        <Button x:Name="BtnClose" Click="BtnClose_Click" Style="{StaticResource CaptionBtnCloseStyle}" ToolTip="Close" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Scrollable Content Pages -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,10">
+                    <Grid Margin="28,6,28,20">
+
+                        <!-- ================= 1. HOME / DASHBOARD PAGE ================= -->
+                        <StackPanel x:Name="PageHome" Visibility="Visible">
+                            <!-- Page Header (Badges completely removed per user request) -->
+                            <Grid Margin="0,0,0,20">
+                                <StackPanel>
+                                    <TextBlock Text="Dashboard" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Card 1: Live Controller Output Telemetry (Flashy LIVE 1000Hz badge removed) -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,14">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Path Data="{StaticResource IconGamepad}" Fill="{StaticResource AccentPrimary}" Width="15" Height="15" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Controller Telemetry" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            <Border Background="#3020283A" BorderBrush="#3B4861" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="XBOX 360" FontSize="9" FontWeight="Bold" Foreground="{StaticResource AccentSecondary}" />
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Axis Quick Switches -->
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Button x:Name="BtnQuickToggleThrottle" Click="BtnToggleThrottleAxis_Click" Style="{StaticResource AxisTogglePillStyle}" Margin="0,0,8,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse x:Name="DotQuickThrottle" Width="6" Height="6" Fill="#FFFFFF" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="TxtQuickThrottle" Text="Acceleration: ON" FontSize="11" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="BtnQuickToggleBrake" Click="BtnToggleBrakeAxis_Click" Style="{StaticResource AxisTogglePillStyle}" Margin="0,0,8,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse x:Name="DotQuickBrake" Width="6" Height="6" Fill="#FFFFFF" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="TxtQuickBrake" Text="Braking: ON" FontSize="11" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="BtnQuickToggleSteering" Click="BtnToggleSteeringAxis_Click" Style="{StaticResource AxisTogglePillStyle}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse x:Name="DotQuickSteering" Width="6" Height="6" Fill="#FFFFFF" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="TxtQuickSteering" Text="Steering: ON" FontSize="11" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <!-- 4 Channels Live Output Bars (Refined, Non-flashy Palette) -->
+                                    <Grid Margin="0,6,0,0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="140" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="60" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Throttle RT -->
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4">
+                                            <Path Data="{StaticResource IconThrottle}" Fill="{StaticResource ChannelThrottle}" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Throttle (RT)" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource ChannelThrottle}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <ProgressBar x:Name="ProgLiveThrottle" Grid.Row="0" Grid.Column="1" Height="8" Minimum="0" Maximum="100" Value="0" Background="{StaticResource BgInput}" Foreground="{StaticResource ChannelThrottle}" BorderThickness="0" Margin="0,4,12,4" />
+                                        <TextBlock x:Name="TxtLiveThrottleVal" Grid.Row="0" Grid.Column="2" Text="0%" FontSize="11" FontWeight="Bold" Foreground="{StaticResource ChannelThrottle}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                                        <!-- Brake LT -->
+                                        <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4">
+                                            <Path Data="{StaticResource IconBrake}" Fill="{StaticResource ChannelBrake}" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Brake (LT)" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource ChannelBrake}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <ProgressBar x:Name="ProgLiveBrake" Grid.Row="1" Grid.Column="1" Height="8" Minimum="0" Maximum="100" Value="0" Background="{StaticResource BgInput}" Foreground="{StaticResource ChannelBrake}" BorderThickness="0" Margin="0,4,12,4" />
+                                        <TextBlock x:Name="TxtLiveBrakeVal" Grid.Row="1" Grid.Column="2" Text="0%" FontSize="11" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                                        <!-- Steer Left -->
+                                        <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4">
+                                            <Path Data="{StaticResource IconArrowLeft}" Fill="{StaticResource ChannelSteerLeft}" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Steer Left (X-)" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource ChannelSteerLeft}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <ProgressBar x:Name="ProgLiveSteerLeft" Grid.Row="2" Grid.Column="1" Height="8" Minimum="0" Maximum="100" Value="0" Background="{StaticResource BgInput}" Foreground="{StaticResource ChannelSteerLeft}" BorderThickness="0" Margin="0,4,12,4" />
+                                        <TextBlock x:Name="TxtLiveSteerLeftVal" Grid.Row="2" Grid.Column="2" Text="0%" FontSize="11" FontWeight="Bold" Foreground="{StaticResource ChannelSteerLeft}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+
+                                        <!-- Steer Right -->
+                                        <StackPanel Grid.Row="3" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4">
+                                            <Path Data="{StaticResource IconArrowRight}" Fill="{StaticResource ChannelSteerRight}" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Steer Right (X+)" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource ChannelSteerRight}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <ProgressBar x:Name="ProgLiveSteerRight" Grid.Row="3" Grid.Column="1" Height="8" Minimum="0" Maximum="100" Value="0" Background="{StaticResource BgInput}" Foreground="{StaticResource ChannelSteerRight}" BorderThickness="0" Margin="0,4,12,4" />
+                                        <TextBlock x:Name="TxtLiveSteerRightVal" Grid.Row="3" Grid.Column="2" Text="0%" FontSize="11" FontWeight="Bold" Foreground="{StaticResource ChannelSteerRight}" VerticalAlignment="Center" HorizontalAlignment="Right" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 2: Quick Profile Switcher -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Path Data="{StaticResource IconProfiles}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Active Profile" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="Profiles →" Click="GoToProfilesPage_Click" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <WrapPanel x:Name="PnlProfileChips" Margin="0,4,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 3: ViGEm Driver Status -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Path Data="{StaticResource IconGamepad}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="ViGEmBus Driver" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            <Border x:Name="BadgeViGemStatus" Background="#20FFFFFF" BorderBrush="{StaticResource StatusActive}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="TxtViGemBadge" Text="INSTALLED &amp; READY" FontSize="9" FontWeight="Bold" Foreground="{StaticResource StatusActive}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock x:Name="TxtViGemStatusMessage" Text="Driver connected." FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                                    </StackPanel>
+                                    <Button x:Name="BtnDownloadViGem" Click="BtnDownloadViGem_Click" Grid.Column="1" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" Padding="16,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Data="{StaticResource IconSave}" Fill="#FFFFFF" Width="12" Height="12" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtBtnViGemAction" Text="Install ViGEm Driver" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                        </StackPanel>
+
+                        <!-- ================= 2. THROTTLE PAGE ================= -->
+                        <StackPanel x:Name="PageThrottle" Visibility="Collapsed">
+                            <!-- Page Header -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Throttle" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BtnToggleThrottleAxis" Click="BtnToggleThrottleAxis_Click" Style="{StaticResource AxisTogglePillStyle}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse x:Name="DotThrottleAxis" Width="7" Height="7" Fill="#FFFFFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtThrottleAxisStatus" Text="ACCELERATION: ENABLED" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Card 1: Key Binding -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Path Data="{StaticResource IconKeyboard}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Key Binding" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="5" Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="Right Trigger (RT)" FontSize="11" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" x:Name="BtnBindThrottleKey" Click="BtnBindThrottleKey_Click" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" Padding="20,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Bound Key: " Foreground="{StaticResource TextSecondary}" />
+                                            <TextBlock x:Name="TxtBoundKey" Text="W" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                                                        <!-- Card 2: Ramp Timing (Manual Input & Quick Presets) -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Path Data="{StaticResource IconTimer}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Timings" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    
+
+                                    <!-- Attack Time Manual Selector -->
+                                    <Grid Margin="0,0,0,16">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                            <TextBlock Text="Attack Time" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtAttackDisplay" Text="0.25 s" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                                            <Button Content="– 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepAttack_Click" Tag="-0.10" ToolTip="Decrease 0.10s" />
+                                            <Button Content="– 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepAttack_Click" Tag="-0.01" ToolTip="Decrease 0.01s" Margin="4,0,0,0" />
+                                            <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="32" Width="95" Margin="8,0,8,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="TxtAttackInput" Text="0.25" LostFocus="TxtAttackInput_LostFocus" KeyDown="TxtAttackInput_KeyDown" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="s" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                </Grid>
+                                            </Border>
+                                            <Button Content="+ 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepAttack_Click" Tag="0.01" ToolTip="Increase 0.01s" />
+                                            <Button Content="+ 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepAttack_Click" Tag="0.10" ToolTip="Increase 0.10s" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="Instant (0.01s)" Style="{StaticResource PresetChipBtn}" Click="PresetAttack_Click" Tag="0.01" />
+                                            <Button Content="Fast (0.15s)" Style="{StaticResource PresetChipBtn}" Click="PresetAttack_Click" Tag="0.15" />
+                                            <Button Content="Normal (0.25s)" Style="{StaticResource PresetChipBtn}" Click="PresetAttack_Click" Tag="0.25" />
+                                            <Button Content="Smooth (0.50s)" Style="{StaticResource PresetChipBtn}" Click="PresetAttack_Click" Tag="0.50" />
+                                            <Button Content="Rain/Wet (1.20s)" Style="{StaticResource PresetChipBtn}" Click="PresetAttack_Click" Tag="1.20" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Release Time Manual Selector -->
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                            <TextBlock Text="Release Time" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtReleaseDisplay" Text="0.10 s" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                                            <Button Content="– 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepRelease_Click" Tag="-0.10" ToolTip="Decrease 0.10s" />
+                                            <Button Content="– 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepRelease_Click" Tag="-0.01" ToolTip="Decrease 0.01s" Margin="4,0,0,0" />
+                                            <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="32" Width="95" Margin="8,0,8,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="TxtReleaseInput" Text="0.10" LostFocus="TxtReleaseInput_LostFocus" KeyDown="TxtReleaseInput_KeyDown" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="s" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                </Grid>
+                                            </Border>
+                                            <Button Content="+ 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepRelease_Click" Tag="0.01" ToolTip="Increase 0.01s" />
+                                            <Button Content="+ 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepRelease_Click" Tag="0.10" ToolTip="Increase 0.10s" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="Instant (0.01s)" Style="{StaticResource PresetChipBtn}" Click="PresetRelease_Click" Tag="0.01" />
+                                            <Button Content="Fast (0.06s)" Style="{StaticResource PresetChipBtn}" Click="PresetRelease_Click" Tag="0.06" />
+                                            <Button Content="Normal (0.10s)" Style="{StaticResource PresetChipBtn}" Click="PresetRelease_Click" Tag="0.10" />
+                                            <Button Content="Smooth (0.25s)" Style="{StaticResource PresetChipBtn}" Click="PresetRelease_Click" Tag="0.25" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 3: Progressive Response Curve -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Path Data="{StaticResource IconGraph}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Response Curve" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    
+
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <TextBlock Text="Curve Type: " FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox x:Name="CmbCurveType" SelectionChanged="CmbCurveType_SelectionChanged" Width="180" Height="30" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="TxtCurveDescription" Visibility="Collapsed" />
+
+                                    
+
+                                    
+
+                                    <!-- Interactive Bezier Curve Canvas -->
+                                    <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="180" Margin="0,0,0,10">
+                                        <Canvas x:Name="CurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="CurveEditorCanvas_SizeChanged" MouseDown="CurveEditorCanvas_MouseDown" MouseMove="CurveEditorCanvas_MouseMove" MouseUp="CurveEditorCanvas_MouseUp" />
+                                    </Border>
+                                    <TextBlock x:Name="TxtCurveHandlesReadout" Visibility="Collapsed" Text="P1 Launch: (0.25, 0.10) • P2 Top: (0.75, 0.90)" FontSize="10" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 4: Min / Max Limits -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Path Data="{StaticResource IconTarget}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Limits" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                                            <TextBlock Text="Minimum" FontSize="12" Foreground="{StaticResource TextPrimary}" />
+                                            <TextBlock x:Name="TxtMinThrottleDisplay" Text="0%" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <Slider x:Name="SliderMinThrottle" Grid.Row="1" Style="{StaticResource ModernSlider}" Minimum="0" Maximum="50" Value="0" ValueChanged="SliderMinThrottle_ValueChanged" />
+                                    </Grid>
+
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                                            <TextBlock Text="Maximum" FontSize="12" Foreground="{StaticResource TextPrimary}" />
+                                            <TextBlock x:Name="TxtMaxThrottleDisplay" Text="100%" FontSize="12" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <Slider x:Name="SliderMaxThrottle" Grid.Row="1" Style="{StaticResource ModernSlider}" Minimum="50" Maximum="100" Value="100" ValueChanged="SliderMaxThrottle_ValueChanged" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ================= 3. BRAKE PAGE ================= -->
+                        <StackPanel x:Name="PageBrake" Visibility="Collapsed">
+                            <!-- Page Header -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Brake" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BtnToggleBrakeAxis" Click="BtnToggleBrakeAxis_Click" Style="{StaticResource AxisTogglePillStyle}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse x:Name="DotBrakeAxis" Width="7" Height="7" Fill="#FFFFFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtBrakeAxisStatus" Text="BRAKING: ENABLED" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Card 1: Key Binding -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Path Data="{StaticResource IconKeyboard}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Key Binding" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="5" Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="Left Trigger (LT)" FontSize="11" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" x:Name="BtnBindBrakeKey" Click="BtnBindBrakeKey_Click" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" Padding="20,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Bound Key: " Foreground="{StaticResource TextSecondary}" />
+                                            <TextBlock x:Name="TxtBoundBrakeKey" Text="S" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <!-- Card 2: Ramp Timing (Manual Input & Quick Presets) -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Path Data="{StaticResource IconTimer}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Timings" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    
+
+                                    <!-- Attack Time Manual Selector -->
+                                    <Grid Margin="0,0,0,16">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                            <TextBlock Text="Attack Time" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtBrakeAttackDisplay" Text="0.18 s" FontSize="12" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                                            <Button Content="– 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeAttack_Click" Tag="-0.10" ToolTip="Decrease 0.10s" />
+                                            <Button Content="– 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeAttack_Click" Tag="-0.01" ToolTip="Decrease 0.01s" Margin="4,0,0,0" />
+                                            <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="32" Width="95" Margin="8,0,8,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="TxtBrakeAttackInput" Text="0.18" LostFocus="TxtBrakeAttackInput_LostFocus" KeyDown="TxtBrakeAttackInput_KeyDown" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="s" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                </Grid>
+                                            </Border>
+                                            <Button Content="+ 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeAttack_Click" Tag="0.01" ToolTip="Increase 0.01s" />
+                                            <Button Content="+ 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeAttack_Click" Tag="0.10" ToolTip="Increase 0.10s" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="Instant (0.01s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeAttack_Click" Tag="0.01" />
+                                            <Button Content="ABS Fast (0.08s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeAttack_Click" Tag="0.08" />
+                                            <Button Content="Normal (0.18s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeAttack_Click" Tag="0.18" />
+                                            <Button Content="Trail Brake (0.35s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeAttack_Click" Tag="0.35" />
+                                            <Button Content="Wet / Cold (0.80s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeAttack_Click" Tag="0.80" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Release Time Manual Selector -->
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                            <TextBlock Text="Release Time" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtBrakeReleaseDisplay" Text="0.08 s" FontSize="12" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                                            <Button Content="– 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeRelease_Click" Tag="-0.10" ToolTip="Decrease 0.10s" />
+                                            <Button Content="– 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeRelease_Click" Tag="-0.01" ToolTip="Decrease 0.01s" Margin="4,0,0,0" />
+                                            <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="32" Width="95" Margin="8,0,8,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="TxtBrakeReleaseInput" Text="0.08" LostFocus="TxtBrakeReleaseInput_LostFocus" KeyDown="TxtBrakeReleaseInput_KeyDown" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="s" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                </Grid>
+                                            </Border>
+                                            <Button Content="+ 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeRelease_Click" Tag="0.01" ToolTip="Increase 0.01s" />
+                                            <Button Content="+ 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepBrakeRelease_Click" Tag="0.10" ToolTip="Increase 0.10s" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="Instant (0.01s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeRelease_Click" Tag="0.01" />
+                                            <Button Content="Fast (0.05s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeRelease_Click" Tag="0.05" />
+                                            <Button Content="Normal (0.08s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeRelease_Click" Tag="0.08" />
+                                            <Button Content="Smooth (0.20s)" Style="{StaticResource PresetChipBtn}" Click="PresetBrakeRelease_Click" Tag="0.20" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 3: Progressive Braking Curve -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Path Data="{StaticResource IconGraph}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Response Curve" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <TextBlock Text="Curve Type: " FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <ComboBox x:Name="CmbBrakeCurveType" SelectionChanged="CmbBrakeCurveType_SelectionChanged" Width="180" Height="30" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="TxtBrakeCurveDescription" Visibility="Collapsed" />
+
+                                    
+
+                                    
+                                    <!-- Interactive Bezier Curve Canvas -->
+                                    <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="180" Margin="0,0,0,10">
+                                        <Canvas x:Name="BrakeCurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="BrakeCurveEditorCanvas_SizeChanged" MouseDown="BrakeCurveEditorCanvas_MouseDown" MouseMove="BrakeCurveEditorCanvas_MouseMove" MouseUp="BrakeCurveEditorCanvas_MouseUp" />
+                                    </Border>
+                                    <TextBlock x:Name="TxtBrakeCurveHandlesReadout" Visibility="Collapsed" Text="P1 Initial: (0.25, 0.10) • P2 Lockup: (0.75, 0.90)" FontSize="10" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 4: Min / Max Limits -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Path Data="{StaticResource IconTarget}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Limits" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                                            <TextBlock Text="Minimum" FontSize="12" Foreground="{StaticResource TextPrimary}" />
+                                            <TextBlock x:Name="TxtMinBrakeDisplay" Text="0%" FontSize="12" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <Slider x:Name="SliderMinBrake" Grid.Row="1" Style="{StaticResource ModernSlider}" Minimum="0" Maximum="50" Value="0" ValueChanged="SliderMinBrake_ValueChanged" />
+                                    </Grid>
+
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                                            <TextBlock Text="Maximum" FontSize="12" Foreground="{StaticResource TextPrimary}" />
+                                            <TextBlock x:Name="TxtMaxBrakeDisplay" Text="100%" FontSize="12" FontWeight="Bold" Foreground="{StaticResource ChannelBrake}" HorizontalAlignment="Right" />
+                                        </Grid>
+                                        <Slider x:Name="SliderMaxBrake" Grid.Row="1" Style="{StaticResource ModernSlider}" Minimum="50" Maximum="100" Value="100" ValueChanged="SliderMaxBrake_ValueChanged" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ================= 4. STEERING PAGE (UNIFIED SINGLE TAB) ================= -->
+                        <StackPanel x:Name="PageSteering" Visibility="Collapsed">
+                            <!-- Page Header with Axis Enable Toggle -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Steering" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BtnToggleSteeringAxis" Click="BtnToggleSteeringAxis_Click" Style="{StaticResource AxisTogglePillStyle}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse x:Name="DotSteeringAxis" Width="7" Height="7" Fill="#FFFFFF" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtSteeringAxisStatus" Text="STEERING: ENABLED" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Card 1: Key Bindings (Both Left and Right) -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Path Data="{StaticResource IconKeyboard}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Key Bindings" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="5" Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="Left Stick (LS X-Axis)" FontSize="11" FontWeight="Bold" Foreground="#B388FF" />
+                                        </Border>
+                                    </StackPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="16" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Steer Left -->
+                                        <Border Grid.Column="0" Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="6" Padding="14,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Steer Left (LS ←)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" />
+                                                    <TextBlock x:Name="TxtBoundSteerLeftKey" Text="[ A ]" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <Button x:Name="BtnRebindSteerLeft" Click="BtnRebindSteerLeft_Click" Grid.Column="1" Content="Rebind" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Steer Right -->
+                                        <Border Grid.Column="2" Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderSubtle}" BorderThickness="1" CornerRadius="6" Padding="14,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel VerticalAlignment="Center">
+                                                    <TextBlock Text="Steer Right (LS →)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" />
+                                                    <TextBlock x:Name="TxtBoundSteerRightKey" Text="[ D ]" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                                <Button x:Name="BtnRebindSteerRight" Click="BtnRebindSteerRight_Click" Grid.Column="1" Content="Rebind" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 2: Ramp Timing -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <Path Data="{StaticResource IconTimer}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Timings" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    
+
+                                    <!-- Attack Time -->
+                                    <Grid Margin="0,0,0,16">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                            <TextBlock Text="Turn Rate" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtSteerAttackDisplay" Text="0.20 s" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                                            <Button Content="– 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepSteerAttack_Click" Tag="-0.10" ToolTip="Decrease 0.10s" />
+                                            <Button Content="– 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepSteerAttack_Click" Tag="-0.01" ToolTip="Decrease 0.01s" Margin="4,0,0,0" />
+                                            <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="32" Width="95" Margin="8,0,8,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="TxtSteerAttackInput" Text="0.20" LostFocus="TxtSteerAttackInput_LostFocus" KeyDown="TxtSteerAttackInput_KeyDown" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="s" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                </Grid>
+                                            </Border>
+                                            <Button Content="+ 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepSteerAttack_Click" Tag="0.01" ToolTip="Increase 0.01s" />
+                                            <Button Content="+ 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepSteerAttack_Click" Tag="0.10" ToolTip="Increase 0.10s" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="Direct (0.01s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerAttack_Click" Tag="0.01" />
+                                            <Button Content="Formula 1 (0.08s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerAttack_Click" Tag="0.08" />
+                                            <Button Content="Sport (0.20s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerAttack_Click" Tag="0.20" />
+                                            <Button Content="Smooth (0.35s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerAttack_Click" Tag="0.35" />
+                                            <Button Content="Truck/Heavy (0.70s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerAttack_Click" Tag="0.70" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Release Time -->
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                                            <TextBlock Text="Return Rate" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimary}" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="TxtSteerReleaseDisplay" Text="0.09 s" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8" VerticalAlignment="Center">
+                                            <Button Content="– 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepSteerRelease_Click" Tag="-0.10" ToolTip="Decrease 0.10s" />
+                                            <Button Content="– 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepSteerRelease_Click" Tag="-0.01" ToolTip="Decrease 0.01s" Margin="4,0,0,0" />
+                                            <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="32" Width="95" Margin="8,0,8,0">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox x:Name="TxtSteerReleaseInput" Text="0.09" LostFocus="TxtSteerReleaseInput_LostFocus" KeyDown="TxtSteerReleaseInput_KeyDown" Background="Transparent" BorderThickness="0" Foreground="#FFFFFF" FontSize="13" FontWeight="Bold" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="6,0,0,0" />
+                                                    <TextBlock Grid.Column="1" Text="s" FontSize="11" Foreground="{StaticResource TextMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                </Grid>
+                                            </Border>
+                                            <Button Content="+ 0.01s" Style="{StaticResource StepBtnStyle}" Click="StepSteerRelease_Click" Tag="0.01" ToolTip="Increase 0.01s" />
+                                            <Button Content="+ 0.10s" Style="{StaticResource StepBtnStyle}" Click="StepSteerRelease_Click" Tag="0.10" ToolTip="Increase 0.10s" Margin="4,0,0,0" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                                            <Button Content="Instant Snap (0.01s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerRelease_Click" Tag="0.01" />
+                                            <Button Content="Fast (0.05s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerRelease_Click" Tag="0.05" />
+                                            <Button Content="Natural (0.09s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerRelease_Click" Tag="0.09" />
+                                            <Button Content="Damped (0.18s)" Style="{StaticResource PresetChipBtn}" Click="PresetSteerRelease_Click" Tag="0.18" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 3: Response Curve -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Path Data="{StaticResource IconGraph}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Response Curve" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBlock Text="Curve Type: " FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                            <ComboBox x:Name="CmbSteerCurveType" SelectionChanged="CmbSteerCurveType_SelectionChanged" Width="180" Height="30" />
+                                        </StackPanel>
+                                    <TextBlock x:Name="TxtSteerCurveDescription" Visibility="Collapsed" />
+                                    </Grid>
+
+                                    
+
+                                    <!-- Interactive Bezier Curve Canvas -->
+                                    <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="180" Margin="0,0,0,10">
+                                        <Canvas x:Name="SteerCurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="SteerCurveEditorCanvas_SizeChanged" MouseDown="SteerCurveEditorCanvas_MouseDown" MouseMove="SteerCurveEditorCanvas_MouseMove" MouseUp="SteerCurveEditorCanvas_MouseUp" />
+                                    </Border>
+                                    <TextBlock x:Name="TxtSteerCurveHandlesReadout" Visibility="Collapsed" Text="P1 Center: (0.25, 0.10) • P2 Lock: (0.75, 0.90)" FontSize="10" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 4: Steering Limit -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Path Data="{StaticResource IconTarget}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Limits" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                    </StackPanel>
+
+                                    <!-- Min Steering -->
+                                    <Grid Margin="0,0,0,12">
+                                        <TextBlock Text="Minimum" FontSize="12" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock x:Name="TxtMinSteerDisplay" Text="0%" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Right" />
+                                    </Grid>
+                                    <Slider x:Name="SliderMinSteer" Minimum="0" Maximum="50" Value="0" ValueChanged="SliderMinSteer_ValueChanged" Style="{StaticResource ModernSlider}" Margin="0,0,0,16" />
+
+                                    <!-- Max Steering -->
+                                    <Grid Margin="0,0,0,12">
+                                        <TextBlock Text="Maximum" FontSize="12" Foreground="{StaticResource TextPrimary}" />
+                                        <TextBlock x:Name="TxtMaxSteerDisplay" Text="100%" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Right" />
+                                    </Grid>
+                                    <Slider x:Name="SliderMaxSteer" Minimum="20" Maximum="100" Value="100" ValueChanged="SliderMaxSteer_ValueChanged" Style="{StaticResource ModernSlider}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- ================= 5. CONTROLLER REMAP PAGE ================= -->
+                        <StackPanel x:Name="PageRemap" Visibility="Collapsed">
+                            <!-- Page Header -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Remap" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BtnResetRemapDefaults" Click="BtnResetRemapDefaults_Click" Content="Reset Defaults" Style="{StaticResource CardActionBtn}" Margin="0,0,8,0" />
+                                    <Button x:Name="BtnClearAllRemap" Click="BtnClearAllRemap_Click" Content="Clear All" Style="{StaticResource CardActionBtn}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Remap Container (Dynamically rendered category cards) -->
+                            <StackPanel x:Name="PnlRemapCategories" />
+                        </StackPanel>
+
+                        <!-- ================= 6. AUTO-DETECT / GAMES PAGE ================= -->
+                        <StackPanel x:Name="PageGames" Visibility="Collapsed">
+                            <!-- Page Header -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Auto-Detect" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                                <Button x:Name="BtnAddGame" Click="BtnAddGame_Click" Grid.Column="1" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="{StaticResource IconPlus}" Fill="{StaticResource TextPrimary}" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="Add Game" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <!-- Master Auto-Activation Switch Card -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,12">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Path Data="{StaticResource IconTarget}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Process Monitor" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            <Border x:Name="BadgeAutoActivationStatus" Background="#20FFFFFF" BorderBrush="{StaticResource StatusActive}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="TxtAutoActivationBadge" Text="MONITORING ENABLED" FontSize="9" FontWeight="Bold" Foreground="{StaticResource StatusActive}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="Scans active Windows processes and auto-activates Key Trigger when detected" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                                    </StackPanel>
+                                    <Button x:Name="BtnToggleAutoActivation" Click="BtnToggleAutoActivation_Click" Grid.Column="1" Content="Disable Monitor" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Window Focus-Only Mode Switch Card -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                            <Path Data="{StaticResource IconGamepad}" Fill="{StaticResource TextSecondary}" Width="14" Height="14" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Window Focus Detection" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" VerticalAlignment="Center" />
+                                            <Border x:Name="BadgeFocusTrackingStatus" Background="#20FFFFFF" BorderBrush="{StaticResource StatusActive}" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock x:Name="TxtFocusTrackingBadge" Text="ACTIVE ONLY WHEN FOCUSED" FontSize="9" FontWeight="Bold" Foreground="{StaticResource StatusActive}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="Pause Key Trigger automatically when switching away from the game, and resume when focused" FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                                    </StackPanel>
+                                    <Button x:Name="BtnTogglePauseWhenUnfocused" Click="BtnTogglePauseWhenUnfocused_Click" Grid.Column="1" Content="ENABLED" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Dynamic List of Monitored Game Executables -->
+                            <StackPanel x:Name="PnlGamesList" />
+                        </StackPanel>
+
+                        <!-- ================= 6. PROFILES PAGE ================= -->
+                        <StackPanel x:Name="PageProfiles" Visibility="Collapsed">
+                            <!-- Page Header -->
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Profiles" FontSize="24" FontWeight="Bold" Foreground="#FFFFFF" />
+                                    
+                                </StackPanel>
+                                <Button x:Name="BtnAddProfile" Click="BtnAddProfile_Click" Grid.Column="1" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Path Data="{StaticResource IconPlus}" Fill="{StaticResource TextPrimary}" Width="11" Height="11" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                        <TextBlock Text="New Profile" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <!-- Active Profile Hotkey Card -->
+                            <Border Background="{StaticResource BgCard}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="20,18" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="Profile Hotkey" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" />
+                                        <TextBlock x:Name="TxtActiveProfileName" Visibility="Collapsed" />
+                                        
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="BtnBindProfileHotkey" Click="BtnBindProfileHotkey_Click" Style="{StaticResource CardActionBtn}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Hotkey: " Foreground="{StaticResource TextSecondary}" />
+                                                <TextBlock x:Name="TxtProfileHotkeyDisplay" Text="None" FontWeight="Bold" Foreground="{StaticResource AccentPrimary}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="BtnClearProfileHotkey" Click="BtnClearProfileHotkey_Click" ToolTip="Clear Hotkey" Style="{StaticResource CardActionBtn}" Margin="6,0,0,0" Padding="8,6">
+                                            <Path Data="{StaticResource IconClose}" Fill="{StaticResource TextSecondary}" Width="8" Height="8" Stretch="Uniform" />
+                                        </Button>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Dynamic List of Profiles -->
+                            <StackPanel x:Name="PnlProfileCardsList" />
+                        </StackPanel>
+
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
