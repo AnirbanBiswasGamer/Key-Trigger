@@ -331,13 +331,14 @@ namespace KeyTrigger.Core.Engine
         private void EngineLoop()
         {
             var sw = Stopwatch.StartNew();
-            long lastTick = sw.ElapsedMilliseconds;
+            long lastTick = sw.ElapsedTicks;
             long lastTelemetryTick = 0;
+            double invFrequency = 1.0 / Stopwatch.Frequency;
 
             while (_isRunning)
             {
-                long currentTick = sw.ElapsedMilliseconds;
-                double deltaSeconds = (currentTick - lastTick) / 1000.0;
+                long currentTick = sw.ElapsedTicks;
+                double deltaSeconds = (currentTick - lastTick) * invFrequency;
                 lastTick = currentTick;
 
                 if (deltaSeconds > 0.05) deltaSeconds = 0.05; // Prevent jump spikes
@@ -368,9 +369,10 @@ namespace KeyTrigger.Core.Engine
                 }
 
                 // Publish UI telemetry at a clean ~30 FPS (every 33ms) to use minimal CPU resources
-                if (currentTick - lastTelemetryTick >= 33)
+                long currentMs = sw.ElapsedMilliseconds;
+                if (currentMs - lastTelemetryTick >= 33)
                 {
-                    lastTelemetryTick = currentTick;
+                    lastTelemetryTick = currentMs;
 
                     if (TelemetryUpdated != null)
                     {

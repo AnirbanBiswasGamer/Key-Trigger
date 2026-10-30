@@ -74,14 +74,58 @@ namespace KeyTrigger.Core.Engine
             }
         }
 
+        public static bool IsMatchingProcessName(string runningProc, string targetProc)
+        {
+            if (string.IsNullOrWhiteSpace(runningProc) || string.IsNullOrWhiteSpace(targetProc))
+                return false;
+
+            // 1. Exact match (case-insensitive)
+            if (runningProc.Equals(targetProc, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // 2. Codemasters Intel AVX optimization binaries:
+            // GRID 2 and GRID Autosport ship with special 'grid2_avx.exe' / 'GRIDAutosport_avx.exe' for Intel CPUs
+            if (runningProc.Equals($"{targetProc}_avx", StringComparison.OrdinalIgnoreCase) ||
+                targetProc.Equals($"{runningProc}_avx", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // 3. DirectX 11/12, 64-bit, or Unreal Shipping variants
+            // e.g. "Grid_dx12", "Grid_dx11", "Grid_x64", "GRIDLegends_dx12"
+            if (runningProc.StartsWith($"{targetProc}_", StringComparison.OrdinalIgnoreCase) ||
+                runningProc.StartsWith($"{targetProc}-", StringComparison.OrdinalIgnoreCase) ||
+                targetProc.StartsWith($"{runningProc}_", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
+        }
+
         public bool IsGameRunning(AutoActivateGame game)
         {
             if (string.IsNullOrWhiteSpace(game.ExeFileName)) return false;
             string procName = Path.GetFileNameWithoutExtension(game.ExeFileName);
             try
             {
+                // Standard match
                 var procs = Process.GetProcessesByName(procName);
-                return procs.Length > 0;
+                if (procs.Length > 0) return true;
+
+                // Check Intel AVX executable variant (e.g. grid2_avx)
+                var avxProcs = Process.GetProcessesByName($"{procName}_avx");
+                if (avxProcs.Length > 0) return true;
+
+                // Check if target was registered with _avx and base is running
+                if (procName.EndsWith("_avx", StringComparison.OrdinalIgnoreCase))
+                {
+                    string baseName = procName.Substring(0, procName.Length - 4);
+                    var baseProcs = Process.GetProcessesByName(baseName);
+                    if (baseProcs.Length > 0) return true;
+                }
+
+                // Check DirectX 12 variant (e.g. Grid_dx12)
+                var dx12Procs = Process.GetProcessesByName($"{procName}_dx12");
+                if (dx12Procs.Length > 0) return true;
+
+                return false;
             }
             catch
             {
@@ -102,7 +146,7 @@ namespace KeyTrigger.Core.Engine
             {
                 using var fgProc = Process.GetProcessById((int)fgPid);
                 string targetProcName = Path.GetFileNameWithoutExtension(game.ExeFileName);
-                return fgProc.ProcessName.Equals(targetProcName, StringComparison.OrdinalIgnoreCase);
+                return IsMatchingProcessName(fgProc.ProcessName, targetProcName);
             }
             catch
             {
@@ -128,7 +172,7 @@ namespace KeyTrigger.Core.Engine
                 {
                     if (!game.IsEnabled || string.IsNullOrWhiteSpace(game.ExeFileName)) continue;
                     string targetName = Path.GetFileNameWithoutExtension(game.ExeFileName);
-                    if (fgProcName.Equals(targetName, StringComparison.OrdinalIgnoreCase))
+                    if (IsMatchingProcessName(fgProcName, targetName))
                     {
                         focusedGame = game;
                         return true;
