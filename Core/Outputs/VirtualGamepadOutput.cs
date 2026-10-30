@@ -26,6 +26,7 @@ namespace KeyTrigger.Core.Outputs
         private bool _rsDown = false;
         private bool _rsLeft = false;
         private bool _rsRight = false;
+        private readonly System.Collections.Generic.HashSet<Xbox360Button> _pressedButtons = new();
 
         private static readonly System.Collections.Generic.Dictionary<string, Xbox360Button> ButtonLookup = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -217,6 +218,12 @@ namespace KeyTrigger.Core.Outputs
                     // Standard Buttons
                     if (ButtonLookup.TryGetValue(buttonId, out var btn))
                     {
+                        bool isCurrentlyPressed = _pressedButtons.Contains(btn);
+                        if (isCurrentlyPressed == pressed) return;
+
+                        if (pressed) _pressedButtons.Add(btn);
+                        else _pressedButtons.Remove(btn);
+
                         _controller.SetButtonState(btn, pressed);
                         _controller.SubmitReport();
                     }
@@ -242,6 +249,7 @@ namespace KeyTrigger.Core.Outputs
                     _rsDown = false;
                     _rsLeft = false;
                     _rsRight = false;
+                    _pressedButtons.Clear();
                     _controller.SetAxisValue(Xbox360Axis.LeftThumbY, 0);
                     _controller.SetAxisValue(Xbox360Axis.RightThumbX, 0);
                     _controller.SetAxisValue(Xbox360Axis.RightThumbY, 0);

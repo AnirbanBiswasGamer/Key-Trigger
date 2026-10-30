@@ -29,22 +29,7 @@ namespace KeyTrigger.Core.Hooks
         {
             if (_hookHandle != IntPtr.Zero) return;
 
-            IntPtr moduleHandle = IntPtr.Zero;
-            try
-            {
-                using var curProcess = Process.GetCurrentProcess();
-                using var curModule = curProcess.MainModule;
-                if (!string.IsNullOrEmpty(curModule?.ModuleName))
-                {
-                    moduleHandle = NativeMethods.GetModuleHandle(curModule.ModuleName);
-                }
-            }
-            catch { }
-
-            if (moduleHandle == IntPtr.Zero)
-            {
-                moduleHandle = NativeMethods.GetModuleHandle(null);
-            }
+            IntPtr moduleHandle = NativeMethods.GetModuleHandle(null);
 
             _hookHandle = NativeMethods.SetWindowsHookEx(
                 NativeMethods.WH_KEYBOARD_LL,
@@ -55,7 +40,7 @@ namespace KeyTrigger.Core.Hooks
             if (_hookHandle == IntPtr.Zero)
             {
                 int error = Marshal.GetLastWin32Error();
-                throw new InvalidOperationException($"Failed to install low-level keyboard hook. Error code: {error}");
+                System.Diagnostics.Debug.WriteLine($"Low-level keyboard hook warning: {error}. Falling back to 1000Hz hardware polling.");
             }
         }
 

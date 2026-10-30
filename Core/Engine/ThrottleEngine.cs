@@ -328,6 +328,89 @@ namespace KeyTrigger.Core.Engine
             }
         }
 
+        private bool _lastF8Down = false;
+        private int _lastProfileHotkeyDown = 0;
+
+        private void PollHardwareInputs()
+        {
+            // 1. Hardware F8 Master Toggle hotkey
+            if (_settings.ToggleHotKeyVk != 0)
+            {
+                bool isF8Down = (NativeMethods.GetAsyncKeyState(_settings.ToggleHotKeyVk) & 0x8000) != 0;
+                if (isF8Down && !_lastF8Down)
+                {
+                    IsActive = !IsActive;
+                }
+                _lastF8Down = isF8Down;
+            }
+
+            // 2. Hardware Profile switch hotkeys (F1-F4)
+            if (_settings.Profiles != null)
+            {
+                foreach (var profile in _settings.Profiles)
+                {
+                    if (profile.HotkeyVkCode != 0)
+                    {
+                        bool isKeyDown = (NativeMethods.GetAsyncKeyState(profile.HotkeyVkCode) & 0x8000) != 0;
+                        if (isKeyDown && _lastProfileHotkeyDown != profile.HotkeyVkCode)
+                        {
+                            _lastProfileHotkeyDown = profile.HotkeyVkCode;
+                            SwitchToProfile(profile);
+                            break;
+                        }
+                        else if (!isKeyDown && _lastProfileHotkeyDown == profile.HotkeyVkCode)
+                        {
+                            _lastProfileHotkeyDown = 0;
+                        }
+                    }
+                }
+            }
+
+            if (!_isActive)
+            {
+                _isThrottleDown = false;
+                _isBrakeDown = false;
+                _isSteerLeftDown = false;
+                _isSteerRightDown = false;
+                return;
+            }
+
+            // 3. Hardware state for Throttle, Brake, Steering Left & Right
+            if (_settings.ThrottleVkCode != 0)
+            {
+                _isThrottleDown = (NativeMethods.GetAsyncKeyState(_settings.ThrottleVkCode) & 0x8000) != 0;
+            }
+
+            if (_settings.BrakeVkCode != 0)
+            {
+                _isBrakeDown = (NativeMethods.GetAsyncKeyState(_settings.BrakeVkCode) & 0x8000) != 0;
+            }
+
+            if (_settings.SteerLeftVkCode != 0)
+            {
+                _isSteerLeftDown = (NativeMethods.GetAsyncKeyState(_settings.SteerLeftVkCode) & 0x8000) != 0;
+            }
+
+            if (_settings.SteerRightVkCode != 0)
+            {
+                _isSteerRightDown = (NativeMethods.GetAsyncKeyState(_settings.SteerRightVkCode) & 0x8000) != 0;
+            }
+
+            // 4. Controller Button Mappings (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS)
+            if (_settings.ButtonMappings != null)
+            {
+                for (int i = 0; i < _settings.ButtonMappings.Count; i++)
+                {
+                    var mapping = _settings.ButtonMappings[i];
+                    if (mapping.VkCode != 0)
+                    {
+                        bool isDown = (NativeMethods.GetAsyncKeyState(mapping.VkCode) & 0x8000) != 0;
+                        _gamepadOutput.SetButton(mapping.ButtonId, isDown);
+                    }
+                }
+            }
+        }
+
         private void EngineLoop()
         {
             var sw = Stopwatch.StartNew();
@@ -342,6 +425,10 @@ namespace KeyTrigger.Core.Engine
                 lastTick = currentTick;
 
                 if (deltaSeconds > 0.05) deltaSeconds = 0.05; // Prevent jump spikes
+
+                // Bulletproof direct hardware keyboard polling at 1000Hz:
+                // Guarantees keys are never missed even if WH_KEYBOARD_LL hook is timed out or blocked by Windows
+                PollHardwareInputs();
 
                 if (_isActive)
                 {
