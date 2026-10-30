@@ -89,3 +89,9 @@ Key Trigger is made possible thanks to the following open-source projects and te
 - **Microsoft .NET 8 / WPF** — Modern Windows desktop application framework powering the user interface and high-precision input dispatch.
 
 Special thanks to Benjamin Höglinger-Stelzer (Nefarius) and the open-source community for developing the virtual controller emulation infrastructure.
+
+---
+
+## Disclaimer
+
+This application was vibecoded.
