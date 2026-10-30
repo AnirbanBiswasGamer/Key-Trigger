@@ -74,14 +74,7 @@ namespace KeyTrigger.Core.Engine
                 if (_isActive != value)
                 {
                     _isActive = value;
-                    if (!_isActive)
-                    {
-                        ResetAll();
-                    }
-                    else
-                    {
-                        SynchronizeHardwareState();
-                    }
+                    ResetAll();
                     ActiveStateChanged?.Invoke(_isActive);
                 }
             }
@@ -328,14 +321,27 @@ namespace KeyTrigger.Core.Engine
             // Check Remapped Controller Buttons (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS)
             if (_settings.ButtonMappings != null)
             {
-                var mapping = _settings.ButtonMappings.FirstOrDefault(m => m.VkCode != 0 && m.VkCode == vkCode);
-                if (mapping != null)
+                ControllerButtonMapping? matched = null;
+                lock (_stateLock)
+                {
+                    for (int i = 0; i < _settings.ButtonMappings.Count; i++)
+                    {
+                        var m = _settings.ButtonMappings[i];
+                        if (m != null && m.VkCode != 0 && m.VkCode == vkCode)
+                        {
+                            matched = m;
+                            break;
+                        }
+                    }
+                }
+
+                if (matched != null)
                 {
                     if (_settings.BlockNativeKey)
                     {
                         swallowKey = true;
                     }
-                    _gamepadOutput.SetButton(mapping.ButtonId, isDown);
+                    _gamepadOutput.SetButton(matched.ButtonId, isDown);
                     return;
                 }
             }
@@ -355,170 +361,184 @@ namespace KeyTrigger.Core.Engine
         {
             lock (_stateLock)
             {
-                if (!_isActive)
+                if (!_isActive || _keyboardHook.IsInstalled)
                 {
                     ResetAll();
                     return;
                 }
 
-                // 1. Hardware Throttle
-                if (_settings.ThrottleVkCode != 0)
+                // Fallback hardware polling when hook is not installed
+                try
                 {
-                    bool down = (NativeMethods.GetAsyncKeyState(_settings.ThrottleVkCode) & 0x8000) != 0;
-                    _isThrottleDown = down;
-                    if (!down)
+                    if (_settings.ThrottleVkCode != 0)
                     {
-                        _throttleProgress = 0.0;
-                        _lastEvaluatedThrottle = 0.0;
+                        bool down = (NativeMethods.GetAsyncKeyState(_settings.ThrottleVkCode) & 0x8000) != 0;
+                        _isThrottleDown = down;
+                        if (!down) { _throttleProgress = 0.0; _lastEvaluatedThrottle = 0.0; }
                     }
-                }
 
-                // 2. Hardware Brake
-                if (_settings.BrakeVkCode != 0)
-                {
-                    bool down = (NativeMethods.GetAsyncKeyState(_settings.BrakeVkCode) & 0x8000) != 0;
-                    _isBrakeDown = down;
-                    if (!down)
+                    if (_settings.BrakeVkCode != 0)
                     {
-                        _brakeProgress = 0.0;
-                        _lastEvaluatedBrake = 0.0;
+                        bool down = (NativeMethods.GetAsyncKeyState(_settings.BrakeVkCode) & 0x8000) != 0;
+                        _isBrakeDown = down;
+                        if (!down) { _brakeProgress = 0.0; _lastEvaluatedBrake = 0.0; }
                     }
-                }
 
-                // 3. Hardware Steering
-                if (_settings.SteerLeftVkCode != 0)
-                {
-                    bool down = (NativeMethods.GetAsyncKeyState(_settings.SteerLeftVkCode) & 0x8000) != 0;
-                    _isSteerLeftDown = down;
-                    if (!down) _steerLeftProgress = 0.0;
-                }
-                if (_settings.SteerRightVkCode != 0)
-                {
-                    bool down = (NativeMethods.GetAsyncKeyState(_settings.SteerRightVkCode) & 0x8000) != 0;
-                    _isSteerRightDown = down;
-                    if (!down) _steerRightProgress = 0.0;
-                }
-                if (!_isSteerLeftDown && !_isSteerRightDown)
-                {
-                    _lastEvaluatedSteer = 0.0;
-                }
-
-                // 4. Hardware Controller Buttons
-                if (_settings.ButtonMappings != null)
-                {
-                    for (int i = 0; i < _settings.ButtonMappings.Count; i++)
+                    if (_settings.SteerLeftVkCode != 0)
                     {
-                        var mapping = _settings.ButtonMappings[i];
-                        if (mapping.VkCode != 0)
+                        bool down = (NativeMethods.GetAsyncKeyState(_settings.SteerLeftVkCode) & 0x8000) != 0;
+                        _isSteerLeftDown = down;
+                        if (!down) _steerLeftProgress = 0.0;
+                    }
+                    if (_settings.SteerRightVkCode != 0)
+                    {
+                        bool down = (NativeMethods.GetAsyncKeyState(_settings.SteerRightVkCode) & 0x8000) != 0;
+                        _isSteerRightDown = down;
+                        if (!down) _steerRightProgress = 0.0;
+                    }
+                    if (!_isSteerLeftDown && !_isSteerRightDown)
+                    {
+                        _lastEvaluatedSteer = 0.0;
+                    }
+
+                    if (_settings.ButtonMappings != null)
+                    {
+                        for (int i = 0; i < _settings.ButtonMappings.Count; i++)
                         {
-                            bool isDown = (NativeMethods.GetAsyncKeyState(mapping.VkCode) & 0x8000) != 0;
-                            _gamepadOutput.SetButton(mapping.ButtonId, isDown, force: true);
+                            var mapping = _settings.ButtonMappings[i];
+                            if (mapping.VkCode != 0)
+                            {
+                                bool isDown = (NativeMethods.GetAsyncKeyState(mapping.VkCode) & 0x8000) != 0;
+                                _gamepadOutput.SetButton(mapping.ButtonId, isDown, force: true);
+                            }
                         }
                     }
-                }
 
-                // 5. Update and Force Flush to ViGEm
-                _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
-                _gamepadOutput.ForceFlush();
+                    _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
+                    _gamepadOutput.ForceFlush();
+                }
+                catch { }
             }
         }
 
         private void PollHardwareInputs()
         {
-            // 1. Hardware F8 Master Toggle hotkey
-            if (_settings.ToggleHotKeyVk != 0)
+            // If the global low-level keyboard hook is installed and active,
+            // it authoritatively handles all key intercepts (toggle hotkey, profile hotkeys,
+            // throttle, brake, steering, and remapped buttons) with 0ms event-driven latency.
+            // Hardware polling with GetAsyncKeyState must NOT overwrite those keys while the hook is installed,
+            // because when a low-level hook blocks/swallows keys, win32k does not update GetAsyncKeyState,
+            // which would cause keys to get permanently stuck down.
+            if (_keyboardHook.IsInstalled)
             {
-                bool isF8Down = (NativeMethods.GetAsyncKeyState(_settings.ToggleHotKeyVk) & 0x8000) != 0;
-                if (isF8Down && !_lastF8Down)
-                {
-                    IsActive = !IsActive;
-                }
-                _lastF8Down = isF8Down;
-            }
-
-            // 2. Hardware Profile switch hotkeys (F1-F4)
-            if (_settings.Profiles != null)
-            {
-                foreach (var profile in _settings.Profiles)
-                {
-                    if (profile.HotkeyVkCode != 0)
-                    {
-                        bool isKeyDown = (NativeMethods.GetAsyncKeyState(profile.HotkeyVkCode) & 0x8000) != 0;
-                        if (isKeyDown && _lastProfileHotkeyDown != profile.HotkeyVkCode)
-                        {
-                            _lastProfileHotkeyDown = profile.HotkeyVkCode;
-                            SwitchToProfile(profile);
-                            break;
-                        }
-                        else if (!isKeyDown && _lastProfileHotkeyDown == profile.HotkeyVkCode)
-                        {
-                            _lastProfileHotkeyDown = 0;
-                        }
-                    }
-                }
-            }
-
-            if (!_isActive)
-            {
-                _isThrottleDown = false;
-                _isBrakeDown = false;
-                _isSteerLeftDown = false;
-                _isSteerRightDown = false;
-                _throttleProgress = 0.0;
-                _brakeProgress = 0.0;
-                _steerLeftProgress = 0.0;
-                _steerRightProgress = 0.0;
-                _lastEvaluatedThrottle = 0.0;
-                _lastEvaluatedBrake = 0.0;
-                _lastEvaluatedSteer = 0.0;
-                _gamepadOutput.ResetButtons();
                 return;
             }
 
-            // 3. Hardware state for Throttle, Brake, Steering Left & Right
-            if (_settings.ThrottleVkCode != 0)
+            // Fallback 1000Hz hardware polling ONLY if WH_KEYBOARD_LL hook failed to install
+            try
             {
-                _isThrottleDown = (NativeMethods.GetAsyncKeyState(_settings.ThrottleVkCode) & 0x8000) != 0;
-            }
-
-            if (_settings.BrakeVkCode != 0)
-            {
-                _isBrakeDown = (NativeMethods.GetAsyncKeyState(_settings.BrakeVkCode) & 0x8000) != 0;
-            }
-
-            if (_settings.SteerLeftVkCode != 0)
-            {
-                _isSteerLeftDown = (NativeMethods.GetAsyncKeyState(_settings.SteerLeftVkCode) & 0x8000) != 0;
-            }
-
-            if (_settings.SteerRightVkCode != 0)
-            {
-                _isSteerRightDown = (NativeMethods.GetAsyncKeyState(_settings.SteerRightVkCode) & 0x8000) != 0;
-            }
-
-            // Alt-Tab safety guard in hardware polling:
-            bool isAltDown = (NativeMethods.GetAsyncKeyState(0x12) & 0x8000) != 0 ||
-                             (NativeMethods.GetAsyncKeyState(0xA4) & 0x8000) != 0 ||
-                             (NativeMethods.GetAsyncKeyState(0xA5) & 0x8000) != 0;
-
-            // 4. Controller Button Mappings (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS)
-            if (_settings.ButtonMappings != null)
-            {
-                for (int i = 0; i < _settings.ButtonMappings.Count; i++)
+                // 1. Hardware F8 Master Toggle hotkey
+                if (_settings.ToggleHotKeyVk != 0)
                 {
-                    var mapping = _settings.ButtonMappings[i];
-                    if (mapping.VkCode != 0)
+                    bool isF8Down = (NativeMethods.GetAsyncKeyState(_settings.ToggleHotKeyVk) & 0x8000) != 0;
+                    if (isF8Down && !_lastF8Down)
                     {
-                        if (isAltDown && mapping.VkCode == 0x09)
-                        {
-                            _gamepadOutput.SetButton(mapping.ButtonId, false);
-                            continue;
-                        }
+                        IsActive = !IsActive;
+                    }
+                    _lastF8Down = isF8Down;
+                }
 
-                        bool isDown = (NativeMethods.GetAsyncKeyState(mapping.VkCode) & 0x8000) != 0;
-                        _gamepadOutput.SetButton(mapping.ButtonId, isDown);
+                // 2. Hardware Profile switch hotkeys (F1-F4)
+                if (_settings.Profiles != null)
+                {
+                    foreach (var profile in _settings.Profiles)
+                    {
+                        if (profile.HotkeyVkCode != 0)
+                        {
+                            bool isKeyDown = (NativeMethods.GetAsyncKeyState(profile.HotkeyVkCode) & 0x8000) != 0;
+                            if (isKeyDown && _lastProfileHotkeyDown != profile.HotkeyVkCode)
+                            {
+                                _lastProfileHotkeyDown = profile.HotkeyVkCode;
+                                SwitchToProfile(profile);
+                                break;
+                            }
+                            else if (!isKeyDown && _lastProfileHotkeyDown == profile.HotkeyVkCode)
+                            {
+                                _lastProfileHotkeyDown = 0;
+                            }
+                        }
                     }
                 }
+
+                if (!_isActive)
+                {
+                    _isThrottleDown = false;
+                    _isBrakeDown = false;
+                    _isSteerLeftDown = false;
+                    _isSteerRightDown = false;
+                    _throttleProgress = 0.0;
+                    _brakeProgress = 0.0;
+                    _steerLeftProgress = 0.0;
+                    _steerRightProgress = 0.0;
+                    _lastEvaluatedThrottle = 0.0;
+                    _lastEvaluatedBrake = 0.0;
+                    _lastEvaluatedSteer = 0.0;
+                    _gamepadOutput.ResetButtons();
+                    return;
+                }
+
+                // 3. Hardware state for Throttle, Brake, Steering Left & Right
+                if (_settings.ThrottleVkCode != 0)
+                {
+                    _isThrottleDown = (NativeMethods.GetAsyncKeyState(_settings.ThrottleVkCode) & 0x8000) != 0;
+                }
+
+                if (_settings.BrakeVkCode != 0)
+                {
+                    _isBrakeDown = (NativeMethods.GetAsyncKeyState(_settings.BrakeVkCode) & 0x8000) != 0;
+                }
+
+                if (_settings.SteerLeftVkCode != 0)
+                {
+                    _isSteerLeftDown = (NativeMethods.GetAsyncKeyState(_settings.SteerLeftVkCode) & 0x8000) != 0;
+                }
+
+                if (_settings.SteerRightVkCode != 0)
+                {
+                    _isSteerRightDown = (NativeMethods.GetAsyncKeyState(_settings.SteerRightVkCode) & 0x8000) != 0;
+                }
+
+                // Alt-Tab safety guard in hardware polling:
+                bool isAltDown = (NativeMethods.GetAsyncKeyState(0x12) & 0x8000) != 0 ||
+                                 (NativeMethods.GetAsyncKeyState(0xA4) & 0x8000) != 0 ||
+                                 (NativeMethods.GetAsyncKeyState(0xA5) & 0x8000) != 0;
+
+                // 4. Controller Button Mappings (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS)
+                if (_settings.ButtonMappings != null)
+                {
+                    lock (_stateLock)
+                    {
+                        for (int i = 0; i < _settings.ButtonMappings.Count; i++)
+                        {
+                            var mapping = _settings.ButtonMappings[i];
+                            if (mapping.VkCode != 0)
+                            {
+                                if (isAltDown && mapping.VkCode == 0x09)
+                                {
+                                    _gamepadOutput.SetButton(mapping.ButtonId, false);
+                                    continue;
+                                }
+
+                                bool isDown = (NativeMethods.GetAsyncKeyState(mapping.VkCode) & 0x8000) != 0;
+                                _gamepadOutput.SetButton(mapping.ButtonId, isDown);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Prevent thread termination
             }
         }
 
@@ -531,65 +551,64 @@ namespace KeyTrigger.Core.Engine
 
             while (_isRunning)
             {
-                long currentTick = sw.ElapsedTicks;
-                double deltaSeconds = (currentTick - lastTick) * invFrequency;
-                lastTick = currentTick;
-
-                if (deltaSeconds > 0.05) deltaSeconds = 0.05; // Prevent jump spikes
-
-                // Bulletproof direct hardware keyboard polling at 1000Hz:
-                // Guarantees keys are never missed even if WH_KEYBOARD_LL hook is timed out or blocked by Windows
-                PollHardwareInputs();
-
-                if (_isActive)
-                {
-                    UpdateRamp(deltaSeconds);
-                }
-                else
-                {
-                    _throttleProgress = 0.0;
-                    _brakeProgress = 0.0;
-                    _steerLeftProgress = 0.0;
-                    _steerRightProgress = 0.0;
-                    _lastEvaluatedThrottle = 0.0;
-                    _lastEvaluatedBrake = 0.0;
-                    _lastEvaluatedSteer = 0.0;
-                }
-
-                // Ultra-responsive Virtual Gamepad Output
                 try
                 {
+                    long currentTick = sw.ElapsedTicks;
+                    double deltaSeconds = (currentTick - lastTick) * invFrequency;
+                    lastTick = currentTick;
+
+                    if (deltaSeconds > 0.05) deltaSeconds = 0.05; // Prevent jump spikes
+
+                    // Direct hardware keyboard polling fallback (only active if hook is not installed)
+                    PollHardwareInputs();
+
+                    if (_isActive)
+                    {
+                        UpdateRamp(deltaSeconds);
+                    }
+                    else
+                    {
+                        _throttleProgress = 0.0;
+                        _brakeProgress = 0.0;
+                        _steerLeftProgress = 0.0;
+                        _steerRightProgress = 0.0;
+                        _lastEvaluatedThrottle = 0.0;
+                        _lastEvaluatedBrake = 0.0;
+                        _lastEvaluatedSteer = 0.0;
+                    }
+
+                    // Ultra-responsive Virtual Gamepad Output
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
+
+                    // Publish UI telemetry at a clean ~30 FPS (every 33ms) to use minimal CPU resources
+                    long currentMs = sw.ElapsedMilliseconds;
+                    if (currentMs - lastTelemetryTick >= 33)
+                    {
+                        lastTelemetryTick = currentMs;
+
+                        if (TelemetryUpdated != null)
+                        {
+                            var telemetry = new ThrottleTelemetry
+                            {
+                                IsActive = _isActive,
+                                IsThrottleKeyPressed = _isThrottleDown,
+                                IsBrakeKeyPressed = _isBrakeDown,
+                                ThrottleProgress = _throttleProgress,
+                                OutputThrottle = _lastEvaluatedThrottle,
+                                BrakeProgress = _brakeProgress,
+                                OutputBrake = _lastEvaluatedBrake,
+                                ActiveOutputMode = OutputMode.VirtualGamepad,
+                                IsOutputAvailable = _gamepadOutput.IsAvailable,
+                                OutputStatusMessage = _gamepadOutput.StatusMessage
+                            };
+
+                            TelemetryUpdated.Invoke(telemetry);
+                        }
+                    }
                 }
                 catch
                 {
                     // Ignore dispatch errors
-                }
-
-                // Publish UI telemetry at a clean ~30 FPS (every 33ms) to use minimal CPU resources
-                long currentMs = sw.ElapsedMilliseconds;
-                if (currentMs - lastTelemetryTick >= 33)
-                {
-                    lastTelemetryTick = currentMs;
-
-                    if (TelemetryUpdated != null)
-                    {
-                        var telemetry = new ThrottleTelemetry
-                        {
-                            IsActive = _isActive,
-                            IsThrottleKeyPressed = _isThrottleDown,
-                            IsBrakeKeyPressed = _isBrakeDown,
-                            ThrottleProgress = _throttleProgress,
-                            OutputThrottle = _lastEvaluatedThrottle,
-                            BrakeProgress = _brakeProgress,
-                            OutputBrake = _lastEvaluatedBrake,
-                            ActiveOutputMode = OutputMode.VirtualGamepad,
-                            IsOutputAvailable = _gamepadOutput.IsAvailable,
-                            OutputStatusMessage = _gamepadOutput.StatusMessage
-                        };
-
-                        TelemetryUpdated.Invoke(telemetry);
-                    }
                 }
 
                 // 1ms kernel-level sleep yielding CPU (enabled by TimeBeginPeriod(1)) -> 0% CPU usage!
@@ -733,19 +752,23 @@ namespace KeyTrigger.Core.Engine
 
         public void ResetAll()
         {
-            _isThrottleDown = false;
-            _isBrakeDown = false;
-            _isSteerLeftDown = false;
-            _isSteerRightDown = false;
-            _throttleProgress = 0.0;
-            _brakeProgress = 0.0;
-            _steerLeftProgress = 0.0;
-            _steerRightProgress = 0.0;
-            _lastEvaluatedThrottle = 0.0;
-            _lastEvaluatedBrake = 0.0;
-            _lastEvaluatedSteer = 0.0;
-            _gamepadOutput.Reset();
-            _gamepadOutput.ResetButtons();
+            lock (_stateLock)
+            {
+                _isThrottleDown = false;
+                _isBrakeDown = false;
+                _isSteerLeftDown = false;
+                _isSteerRightDown = false;
+                _throttleProgress = 0.0;
+                _brakeProgress = 0.0;
+                _steerLeftProgress = 0.0;
+                _steerRightProgress = 0.0;
+                _lastEvaluatedThrottle = 0.0;
+                _lastEvaluatedBrake = 0.0;
+                _lastEvaluatedSteer = 0.0;
+                _gamepadOutput.Reset();
+                _gamepadOutput.ResetButtons();
+                _gamepadOutput.ForceFlush();
+            }
         }
 
         public void Dispose()

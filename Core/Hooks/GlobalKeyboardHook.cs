@@ -18,6 +18,7 @@ namespace KeyTrigger.Core.Hooks
 
         public bool IsKeyCaptureActive { get; set; }
         public int ToggleHotKeyVk { get; set; } = 0x77; // VK_F8
+        public bool IsInstalled => _hookHandle != IntPtr.Zero;
 
         public GlobalKeyboardHook()
         {
@@ -57,37 +58,44 @@ namespace KeyTrigger.Core.Hooks
         {
             if (nCode >= 0)
             {
-                var hookStruct = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
-
-                // If this is an injected keystroke from our own PWM engine, let it pass freely
-                if (hookStruct.dwExtraInfo == NativeMethods.MAGIC_EXTRA_INFO)
+                try
                 {
-                    return NativeMethods.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+                    var hookStruct = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
+
+                    // If this is an injected keystroke from our own PWM engine, let it pass freely
+                    if (hookStruct.dwExtraInfo == NativeMethods.MAGIC_EXTRA_INFO)
+                    {
+                        return NativeMethods.CallNextHookEx(_hookHandle, nCode, wParam, lParam);
+                    }
+
+                    int msg = wParam.ToInt32();
+                    bool isDown = (msg == NativeMethods.WM_KEYDOWN || msg == NativeMethods.WM_SYSKEYDOWN);
+                    bool isUp = (msg == NativeMethods.WM_KEYUP || msg == NativeMethods.WM_SYSKEYUP);
+
+                    if (isDown || isUp)
+                    {
+                        int vkCode = (int)hookStruct.vkCode;
+
+                        // If user is currently rebinding a key in the GUI:
+                        if (IsKeyCaptureActive && isDown)
+                        {
+                            IsKeyCaptureActive = false;
+                            KeyCapturedForBinding?.Invoke(vkCode);
+                            return (IntPtr)1; // Swallow the capture keystroke
+                        }
+
+                        bool swallowKey = false;
+                        KeyIntercepted?.Invoke(vkCode, isDown, ref swallowKey);
+
+                        if (swallowKey)
+                        {
+                            return (IntPtr)1; // Prevent key from propagating to OS / active window
+                        }
+                    }
                 }
-
-                int msg = wParam.ToInt32();
-                bool isDown = (msg == NativeMethods.WM_KEYDOWN || msg == NativeMethods.WM_SYSKEYDOWN);
-                bool isUp = (msg == NativeMethods.WM_KEYUP || msg == NativeMethods.WM_SYSKEYUP);
-
-                if (isDown || isUp)
+                catch
                 {
-                    int vkCode = (int)hookStruct.vkCode;
-
-                    // If user is currently rebinding a key in the GUI:
-                    if (IsKeyCaptureActive && isDown)
-                    {
-                        IsKeyCaptureActive = false;
-                        KeyCapturedForBinding?.Invoke(vkCode);
-                        return (IntPtr)1; // Swallow the capture keystroke
-                    }
-
-                    bool swallowKey = false;
-                    KeyIntercepted?.Invoke(vkCode, isDown, ref swallowKey);
-
-                    if (swallowKey)
-                    {
-                        return (IntPtr)1; // Prevent key from propagating to OS / active window
-                    }
+                    // Prevent any exception from crashing hook callback or causing Windows to unhook
                 }
             }
 
