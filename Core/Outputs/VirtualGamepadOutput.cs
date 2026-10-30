@@ -149,7 +149,7 @@ namespace KeyTrigger.Core.Outputs
             }
         }
 
-        public void SetButton(string buttonId, bool pressed)
+        public void SetButton(string buttonId, bool pressed, bool force = false)
         {
             if (!_isAvailable || _controller == null) return;
 
@@ -160,7 +160,7 @@ namespace KeyTrigger.Core.Outputs
                     // Check Left Stick Up/Down
                     if (buttonId.Equals("LS_Up", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (_lsUp == pressed) return;
+                        if (!force && _lsUp == pressed) return;
                         _lsUp = pressed;
                         short lsY = _lsUp && !_lsDown ? (short)32767 : (_lsDown && !_lsUp ? (short)-32768 : (short)0);
                         _controller.SetAxisValue(Xbox360Axis.LeftThumbY, lsY);
@@ -169,7 +169,7 @@ namespace KeyTrigger.Core.Outputs
                     }
                     if (buttonId.Equals("LS_Down", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (_lsDown == pressed) return;
+                        if (!force && _lsDown == pressed) return;
                         _lsDown = pressed;
                         short lsY = _lsUp && !_lsDown ? (short)32767 : (_lsDown && !_lsUp ? (short)-32768 : (short)0);
                         _controller.SetAxisValue(Xbox360Axis.LeftThumbY, lsY);
@@ -180,7 +180,7 @@ namespace KeyTrigger.Core.Outputs
                     // Check Right Stick Directions (Up, Down, Left, Right)
                     if (buttonId.Equals("RS_Up", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (_rsUp == pressed) return;
+                        if (!force && _rsUp == pressed) return;
                         _rsUp = pressed;
                         short rsY = _rsUp && !_rsDown ? (short)32767 : (_rsDown && !_rsUp ? (short)-32768 : (short)0);
                         _controller.SetAxisValue(Xbox360Axis.RightThumbY, rsY);
@@ -189,7 +189,7 @@ namespace KeyTrigger.Core.Outputs
                     }
                     if (buttonId.Equals("RS_Down", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (_rsDown == pressed) return;
+                        if (!force && _rsDown == pressed) return;
                         _rsDown = pressed;
                         short rsY = _rsUp && !_rsDown ? (short)32767 : (_rsDown && !_rsUp ? (short)-32768 : (short)0);
                         _controller.SetAxisValue(Xbox360Axis.RightThumbY, rsY);
@@ -198,7 +198,7 @@ namespace KeyTrigger.Core.Outputs
                     }
                     if (buttonId.Equals("RS_Left", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (_rsLeft == pressed) return;
+                        if (!force && _rsLeft == pressed) return;
                         _rsLeft = pressed;
                         short rsX = _rsRight && !_rsLeft ? (short)32767 : (_rsLeft && !_rsRight ? (short)-32768 : (short)0);
                         _controller.SetAxisValue(Xbox360Axis.RightThumbX, rsX);
@@ -207,7 +207,7 @@ namespace KeyTrigger.Core.Outputs
                     }
                     if (buttonId.Equals("RS_Right", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (_rsRight == pressed) return;
+                        if (!force && _rsRight == pressed) return;
                         _rsRight = pressed;
                         short rsX = _rsRight && !_rsLeft ? (short)32767 : (_rsLeft && !_rsRight ? (short)-32768 : (short)0);
                         _controller.SetAxisValue(Xbox360Axis.RightThumbX, rsX);
@@ -219,7 +219,7 @@ namespace KeyTrigger.Core.Outputs
                     if (ButtonLookup.TryGetValue(buttonId, out var btn))
                     {
                         bool isCurrentlyPressed = _pressedButtons.Contains(btn);
-                        if (isCurrentlyPressed == pressed) return;
+                        if (!force && isCurrentlyPressed == pressed) return;
 
                         if (pressed) _pressedButtons.Add(btn);
                         else _pressedButtons.Remove(btn);
@@ -227,6 +227,26 @@ namespace KeyTrigger.Core.Outputs
                         _controller.SetButtonState(btn, pressed);
                         _controller.SubmitReport();
                     }
+                }
+                catch
+                {
+                    // Ignore transient write errors
+                }
+            }
+        }
+
+        public void ForceFlush()
+        {
+            if (!_isAvailable || _controller == null) return;
+
+            lock (_syncLock)
+            {
+                try
+                {
+                    _controller.SetSliderValue(Xbox360Slider.RightTrigger, _lastRt);
+                    _controller.SetSliderValue(Xbox360Slider.LeftTrigger, _lastLt);
+                    _controller.SetAxisValue(Xbox360Axis.LeftThumbX, _lastSteer);
+                    _controller.SubmitReport();
                 }
                 catch
                 {

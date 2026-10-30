@@ -197,6 +197,7 @@ namespace KeyTrigger.Core.Engine
             if (eventType == NativeMethods.EVENT_SYSTEM_FOREGROUND)
             {
                 EvaluateFocus();
+                _engine.OnForegroundWindowChanged();
             }
         }
 
