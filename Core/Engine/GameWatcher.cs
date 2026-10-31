@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Threading;
@@ -17,6 +18,11 @@ namespace KeyTrigger.Core.Engine
         private IntPtr _winEventHook = IntPtr.Zero;
         private bool _wasAnyGameRunning;
         private string _lastActiveGame = string.Empty;
+
+        // Names of every process in the last snapshot, and per exe the process names that count as that game.
+        // One snapshot per tick replaces up to four GetProcessesByName calls (each a full snapshot) per game.
+        private readonly HashSet<string> _runningProcessNames = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, string[]> _candidateNames = new(StringComparer.Ordinal);
 
         public event Action<string, bool>? GameStateChanged;
 
@@ -99,38 +105,76 @@ namespace KeyTrigger.Core.Engine
             return false;
         }
 
-        public bool IsGameRunning(AutoActivateGame game)
+        // Takes the process snapshot IsGameRunning reads. Every Process object is disposed, since undisposed
+        // ones each hold a handle until the finalizer gets to them.
+        public void RefreshRunningProcesses()
         {
-            if (string.IsNullOrWhiteSpace(game.ExeFileName)) return false;
-            string procName = Path.GetFileNameWithoutExtension(game.ExeFileName);
+            _runningProcessNames.Clear();
+
+            Process[] procs;
             try
             {
-                // Standard match
-                var procs = Process.GetProcessesByName(procName);
-                if (procs.Length > 0) return true;
-
-                // Check Intel AVX executable variant (e.g. grid2_avx)
-                var avxProcs = Process.GetProcessesByName($"{procName}_avx");
-                if (avxProcs.Length > 0) return true;
-
-                // Check if target was registered with _avx and base is running
-                if (procName.EndsWith("_avx", StringComparison.OrdinalIgnoreCase))
-                {
-                    string baseName = procName.Substring(0, procName.Length - 4);
-                    var baseProcs = Process.GetProcessesByName(baseName);
-                    if (baseProcs.Length > 0) return true;
-                }
-
-                // Check DirectX 12 variant (e.g. Grid_dx12)
-                var dx12Procs = Process.GetProcessesByName($"{procName}_dx12");
-                if (dx12Procs.Length > 0) return true;
-
-                return false;
+                procs = Process.GetProcesses();
             }
             catch
             {
-                return false;
+                return;
             }
+
+            foreach (var proc in procs)
+            {
+                try
+                {
+                    _runningProcessNames.Add(proc.ProcessName);
+                }
+                catch
+                {
+                    // Process exited while we looked at it
+                }
+                finally
+                {
+                    proc.Dispose();
+                }
+            }
+        }
+
+        // Matches against the last RefreshRunningProcesses snapshot
+        public bool IsGameRunning(AutoActivateGame game)
+        {
+            if (string.IsNullOrWhiteSpace(game.ExeFileName)) return false;
+
+            foreach (string name in GetCandidateNames(game.ExeFileName))
+            {
+                if (_runningProcessNames.Contains(name)) return true;
+            }
+            return false;
+        }
+
+        private string[] GetCandidateNames(string exeFileName)
+        {
+            if (_candidateNames.TryGetValue(exeFileName, out var names)) return names;
+
+            string procName = Path.GetFileNameWithoutExtension(exeFileName);
+            var list = new List<string>(4)
+            {
+                // Standard match
+                procName,
+                // Intel AVX executable variant (e.g. grid2_avx)
+                $"{procName}_avx"
+            };
+
+            // Target was registered with _avx and the base exe is running
+            if (procName.EndsWith("_avx", StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(procName.Substring(0, procName.Length - 4));
+            }
+
+            // DirectX 12 variant (e.g. Grid_dx12)
+            list.Add($"{procName}_dx12");
+
+            names = list.ToArray();
+            _candidateNames[exeFileName] = names;
+            return names;
         }
 
         public bool IsGameWindowFocused(AutoActivateGame game)
@@ -145,8 +189,7 @@ namespace KeyTrigger.Core.Engine
             try
             {
                 using var fgProc = Process.GetProcessById((int)fgPid);
-                string targetProcName = Path.GetFileNameWithoutExtension(game.ExeFileName);
-                return IsMatchingProcessName(fgProc.ProcessName, targetProcName);
+                return IsMatchingProcessName(fgProc.ProcessName, GetCandidateNames(game.ExeFileName)[0]);
             }
             catch
             {
@@ -171,8 +214,7 @@ namespace KeyTrigger.Core.Engine
                 foreach (var game in _settings.AutoActivateGames)
                 {
                     if (!game.IsEnabled || string.IsNullOrWhiteSpace(game.ExeFileName)) continue;
-                    string targetName = Path.GetFileNameWithoutExtension(game.ExeFileName);
-                    if (IsMatchingProcessName(fgProcName, targetName))
+                    if (IsMatchingProcessName(fgProcName, GetCandidateNames(game.ExeFileName)[0]))
                     {
                         focusedGame = game;
                         return true;
@@ -227,12 +269,20 @@ namespace KeyTrigger.Core.Engine
             }
 
             bool anyRunning = false;
+            bool haveSnapshot = false;
             string activeGameName = string.Empty;
             string linkedProfileId = string.Empty;
 
             foreach (var game in _settings.AutoActivateGames)
             {
                 if (!game.IsEnabled) continue;
+
+                // Only snapshot when there is an enabled game to look for
+                if (!haveSnapshot)
+                {
+                    RefreshRunningProcesses();
+                    haveSnapshot = true;
+                }
 
                 if (IsGameRunning(game))
                 {
@@ -287,18 +337,7 @@ namespace KeyTrigger.Core.Engine
             else if (anyRunning && _wasAnyGameRunning)
             {
                 // While game is running, continuously ensure focus policy is honored
-                if (_settings.PauseWhenUnfocused)
-                {
-                    bool isFocused = IsAnyMonitoredGameFocused(out _);
-                    if (isFocused && !_engine.IsActive)
-                    {
-                        _engine.IsActive = true;
-                    }
-                    else if (!isFocused && _engine.IsActive)
-                    {
-                        _engine.IsActive = false;
-                    }
-                }
+                EvaluateFocus();
             }
         }
 

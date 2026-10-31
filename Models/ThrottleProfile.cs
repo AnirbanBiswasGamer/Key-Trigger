@@ -206,15 +206,7 @@ namespace KeyTrigger.Models
                 SteerLeftKeyName = SteerLeftKeyName,
                 SteerRightVkCode = SteerRightVkCode,
                 SteerRightKeyName = SteerRightKeyName,
-                ButtonMappings = ButtonMappings?.ConvertAll(m => new ControllerButtonMapping
-                {
-                    ButtonId = m.ButtonId,
-                    DisplayName = m.DisplayName,
-                    Category = m.Category,
-                    DefaultRole = m.DefaultRole,
-                    VkCode = m.VkCode,
-                    KeyName = m.KeyName
-                })
+                ButtonMappings = ButtonMappings?.ConvertAll(m => m.Clone())
             };
         }
     }

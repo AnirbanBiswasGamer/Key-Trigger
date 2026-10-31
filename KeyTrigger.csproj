@@ -10,6 +10,9 @@
     <RootNamespace>KeyTrigger</RootNamespace>
     <ApplicationIcon>Assets\app_icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Precompiled code: the hook callback and pad output don't JIT inside Windows' hook call on the first key press -->
+    <PublishReadyToRun>true</PublishReadyToRun>
     <Title>Key Trigger</Title>
     <Product>Key Trigger</Product>
     <Description>Progressive Keyboard-to-Analog Xbox 360 Controller Trigger &amp; Steering Emulator</Description>

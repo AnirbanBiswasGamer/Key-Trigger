@@ -4,27 +4,15 @@ using System.IO;
 using System.Media;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using KeyTrigger.Core.Hooks;
 using KeyTrigger.Core.Outputs;
+using KeyTrigger.Core.Utils;
 using KeyTrigger.Core.Win32;
 using KeyTrigger.Models;
 
 namespace KeyTrigger.Core.Engine
 {
-    public class ThrottleTelemetry
-    {
-        public bool IsActive { get; set; }
-        public bool IsThrottleKeyPressed { get; set; }
-        public bool IsBrakeKeyPressed { get; set; }
-        public double ThrottleProgress { get; set; }
-        public double OutputThrottle { get; set; }
-        public double BrakeProgress { get; set; }
-        public double OutputBrake { get; set; }
-        public OutputMode ActiveOutputMode { get; set; }
-        public bool IsOutputAvailable { get; set; }
-        public string OutputStatusMessage { get; set; } = string.Empty;
-    }
-
     public class ThrottleEngine : IDisposable
     {
         private readonly AppSettings _settings;
@@ -32,7 +20,14 @@ namespace KeyTrigger.Core.Engine
         private readonly VirtualGamepadOutput _gamepadOutput;
 
         // Starts disabled by default per user requirement; activates manually or via GameWatcher auto-detection
-        private bool _isActive = false;
+        private volatile bool _isActive = false;
+
+        // The keyboard hook runs on its own thread; anything slow or UI-facing it triggers is posted here
+        private readonly Dispatcher _uiDispatcher;
+        private readonly bool[] _hotkeyHeld = new bool[256]; // Hook thread only: ignores auto-repeat of F8 / profile hotkeys
+        private readonly bool[] _keyHeld = new bool[256];    // Physical key state as seen by the hook and the Raw Input backstop
+        private bool _tabPressStartedWithAlt;                // Guarded by _stateLock
+        private int _rawBackstopHits;
         private volatile bool _isThrottleDown;
         private volatile bool _isBrakeDown;
         private volatile bool _isSteerLeftDown;
@@ -48,23 +43,24 @@ namespace KeyTrigger.Core.Engine
 
         private Thread? _engineThread;
         private volatile bool _isRunning;
+        private bool _timerPeriodSet;
         private readonly object _stateLock = new();
 
-        public event Action<ThrottleTelemetry>? TelemetryUpdated;
+        // Wakes the engine loop early: on a ramp key's press or release (so its first step doesn't wait for a tick)
+        // and on activation. The loop idles at a slow rate whenever nothing is held or ramping.
+        private readonly AutoResetEvent _wake = new(false);
+        private const int ActiveTickMs = 1;
+        private const int IdleTickMs = 25; // Two idle ticks reach the pad's 45 ms heartbeat threshold, so it still resends by ~50 ms
+
         public event Action<bool>? ActiveStateChanged;
         public event Action<ThrottleProfile>? ProfileActivated;
 
-        public AppSettings Settings => _settings;
         public GlobalKeyboardHook KeyboardHook => _keyboardHook;
         public VirtualGamepadOutput GamepadOutput => _gamepadOutput;
 
         public double LastEvaluatedThrottle => _lastEvaluatedThrottle;
         public double LastEvaluatedBrake => _lastEvaluatedBrake;
         public double LastEvaluatedSteer => _lastEvaluatedSteer;
-        public bool IsThrottleDown => _isThrottleDown;
-        public bool IsBrakeDown => _isBrakeDown;
-        public bool IsSteerLeftDown => _isSteerLeftDown;
-        public bool IsSteerRightDown => _isSteerRightDown;
 
         public bool IsActive
         {
@@ -74,7 +70,9 @@ namespace KeyTrigger.Core.Engine
                 if (_isActive != value)
                 {
                     _isActive = value;
+                    if (DiagLog.Enabled) DiagLog.Write($"Key Trigger {(value ? "ACTIVE" : "inactive")}");
                     ResetAll();
+                    _wake.Set();
                     ActiveStateChanged?.Invoke(_isActive);
                 }
             }
@@ -83,21 +81,35 @@ namespace KeyTrigger.Core.Engine
         public ThrottleEngine(AppSettings settings)
         {
             _settings = settings;
-            _keyboardHook = new GlobalKeyboardHook
-            {
-                ToggleHotKeyVk = _settings.ToggleHotKeyVk
-            };
+            _keyboardHook = new GlobalKeyboardHook();
 
             _gamepadOutput = new VirtualGamepadOutput();
             _keyboardHook.KeyIntercepted += OnKeyIntercepted;
+            _keyboardHook.RawKeyObserved += OnRawKeyObserved;
+            _keyboardHook.IsTracedKey = IsMappedKey;
+
+            // Constructed on the UI thread (MainWindow), so this is the UI dispatcher
+            _uiDispatcher = Dispatcher.CurrentDispatcher;
+        }
+
+        private void RunOnUiThread(Action action)
+        {
+            _uiDispatcher.BeginInvoke(() =>
+            {
+                try { action(); } catch { }
+            });
         }
 
         public void Start()
         {
             if (_isRunning) return;
 
-            // Request 1ms OS multimedia timer precision for true 1000Hz polling rate
-            NativeMethods.TimeBeginPeriod(1);
+            // The engine loop's 1 ms wait relies on a 1 ms timer resolution. Windows 11 stops honouring that request
+            // for a process whose windows are minimized or covered (exactly how Key Trigger sits behind a game), which
+            // measured as ramped keys going from ~1 ms to ~8 ms (p50) and 16 ms (max). Opt out of that, and of
+            // background execution-speed throttling, before asking for the resolution.
+            NativeMethods.OptOutOfPowerThrottling();
+            _timerPeriodSet = NativeMethods.TimeBeginPeriod(1) == 0;
 
             _gamepadOutput.Initialize();
             _keyboardHook.Install();
@@ -112,14 +124,6 @@ namespace KeyTrigger.Core.Engine
             _engineThread.Start();
         }
 
-        public void UpdateKeyBindings()
-        {
-            lock (_stateLock)
-            {
-                _keyboardHook.ToggleHotKeyVk = _settings.ToggleHotKeyVk;
-            }
-        }
-
         public void SwitchToProfile(ThrottleProfile profile)
         {
             lock (_stateLock)
@@ -129,11 +133,21 @@ namespace KeyTrigger.Core.Engine
 
                 _settings.ActiveProfileId = profile.Id;
                 _settings.SyncFromActiveProfile();
-                _settings.Save();
+
+                // The new profile may bind different keys, so a key held now could never see its release matched.
+                // Release everything, then press again whatever is still physically held under the new bindings.
+                ResetAll();
+                if (_isActive)
+                {
+                    for (int vk = 1; vk < _keyHeld.Length; vk++)
+                    {
+                        if (_keyHeld[vk]) ApplyMappedKey(vk, true);
+                    }
+                }
             }
 
-            // Immediately apply new key bindings & controller mappings
-            UpdateKeyBindings();
+            // Outside the lock: the keyboard hook waits on it, and a slow disk must not stall key handling
+            _settings.Save();
 
             int index = _settings.Profiles.IndexOf(profile);
             if (index < 0) index = 0;
@@ -142,45 +156,18 @@ namespace KeyTrigger.Core.Engine
             ProfileActivated?.Invoke(profile);
         }
 
+        // One short tone per profile slot, synthesised on first use and reused after
+        private static readonly byte[]?[] SwitchSounds = new byte[8][];
+
         private static void PlaySubtleSwitchSound(int index)
         {
+            int slot = Math.Clamp(index, 0, 7);
             Task.Run(() =>
             {
                 try
                 {
-                    int sampleRate = 44100;
-                    int durationMs = 36;
-                    int numSamples = sampleRate * durationMs / 1000;
-                    double freq = 480.0 + (Math.Clamp(index, 0, 7) * 50.0);
-
-                    byte[] wavBytes = new byte[44 + numSamples * 2];
-                    using var ms = new MemoryStream(wavBytes);
-                    using var writer = new BinaryWriter(ms);
-
-                    writer.Write(new char[4] { 'R', 'I', 'F', 'F' });
-                    writer.Write(36 + numSamples * 2);
-                    writer.Write(new char[4] { 'W', 'A', 'V', 'E' });
-                    writer.Write(new char[4] { 'f', 'm', 't', ' ' });
-                    writer.Write(16);
-                    writer.Write((short)1); // PCM
-                    writer.Write((short)1); // Mono
-                    writer.Write(sampleRate);
-                    writer.Write(sampleRate * 2);
-                    writer.Write((short)2);
-                    writer.Write((short)16);
-                    writer.Write(new char[4] { 'd', 'a', 't', 'a' });
-                    writer.Write(numSamples * 2);
-
-                    short maxAmp = 4200; // ~13% volume for a gentle, subtle haptic audio cue
-                    for (int i = 0; i < numSamples; i++)
-                    {
-                        double t = (double)i / sampleRate;
-                        double env = (i < 80) ? (i / 80.0) : Math.Exp(-(i - 80) / (double)(numSamples * 0.35));
-                        short sample = (short)(Math.Sin(2.0 * Math.PI * freq * t) * maxAmp * env);
-                        writer.Write(sample);
-                    }
-
-                    ms.Position = 0;
+                    byte[] wavBytes = SwitchSounds[slot] ??= BuildSwitchSound(slot);
+                    using var ms = new MemoryStream(wavBytes, writable: false);
                     using var player = new SoundPlayer(ms);
                     player.PlaySync();
                 }
@@ -191,23 +178,71 @@ namespace KeyTrigger.Core.Engine
             });
         }
 
+        private static byte[] BuildSwitchSound(int slot)
+        {
+            int sampleRate = 44100;
+            int durationMs = 36;
+            int numSamples = sampleRate * durationMs / 1000;
+            double freq = 480.0 + (slot * 50.0);
+
+            byte[] wavBytes = new byte[44 + numSamples * 2];
+            using var ms = new MemoryStream(wavBytes);
+            using var writer = new BinaryWriter(ms);
+
+            writer.Write(new char[4] { 'R', 'I', 'F', 'F' });
+            writer.Write(36 + numSamples * 2);
+            writer.Write(new char[4] { 'W', 'A', 'V', 'E' });
+            writer.Write(new char[4] { 'f', 'm', 't', ' ' });
+            writer.Write(16);
+            writer.Write((short)1); // PCM
+            writer.Write((short)1); // Mono
+            writer.Write(sampleRate);
+            writer.Write(sampleRate * 2);
+            writer.Write((short)2);
+            writer.Write((short)16);
+            writer.Write(new char[4] { 'd', 'a', 't', 'a' });
+            writer.Write(numSamples * 2);
+
+            short maxAmp = 4200; // ~13% volume for a gentle, subtle haptic audio cue
+            for (int i = 0; i < numSamples; i++)
+            {
+                double t = (double)i / sampleRate;
+                double env = (i < 80) ? (i / 80.0) : Math.Exp(-(i - 80) / (double)(numSamples * 0.35));
+                short sample = (short)(Math.Sin(2.0 * Math.PI * freq * t) * maxAmp * env);
+                writer.Write(sample);
+            }
+
+            return wavBytes;
+        }
+
         private void OnKeyIntercepted(int vkCode, bool isDown, ref bool swallowKey)
         {
+            // Runs on the keyboard hook thread: decide quickly and post anything slow to the UI thread.
+            // Hotkeys swallow their key-up too, and only fire once per press (not on keyboard auto-repeat).
+            _keyHeld[vkCode & 0xFF] = isDown;
+
             // Check global toggle hotkey
-            if (vkCode == _settings.ToggleHotKeyVk && isDown)
+            if (vkCode == _settings.ToggleHotKeyVk)
             {
-                IsActive = !IsActive;
+                if (isDown && !_hotkeyHeld[vkCode])
+                {
+                    RunOnUiThread(() => IsActive = !IsActive);
+                }
+                _hotkeyHeld[vkCode] = isDown;
                 swallowKey = true;
                 return;
             }
 
             // Check profile hotkey
-            if (isDown && _settings.Profiles != null)
             {
-                var matched = _settings.Profiles.FirstOrDefault(p => p.HotkeyVkCode != 0 && p.HotkeyVkCode == vkCode);
+                var matched = FindProfileForHotkey(vkCode);
                 if (matched != null)
                 {
-                    SwitchToProfile(matched);
+                    if (isDown && !_hotkeyHeld[vkCode])
+                    {
+                        RunOnUiThread(() => SwitchToProfile(matched));
+                    }
+                    _hotkeyHeld[vkCode] = isDown;
                     swallowKey = true;
                     return;
                 }
@@ -215,14 +250,79 @@ namespace KeyTrigger.Core.Engine
 
             if (!IsActive) return;
 
+            if (ApplyMappedKey(vkCode, isDown) && _settings.BlockNativeKey)
+            {
+                swallowKey = true;
+            }
+        }
+
+        // Raw Input sees every key the hook did not swallow. With BlockNativeKey on, a mapped key only shows up here
+        // when it slipped past the hook (e.g. the moment a Codemasters/EGO game takes focus), so apply it: that is
+        // what stops a lost key-up from leaving the pad held. Hotkeys are left to the hook alone.
+        private void OnRawKeyObserved(int vkCode, bool isDown)
+        {
+            _keyHeld[vkCode & 0xFF] = isDown;
+
+            // A hotkey release the hook missed must still clear its latch, or the next press would be ignored
+            if (!isDown)
+            {
+                _hotkeyHeld[vkCode & 0xFF] = false;
+            }
+
+            if (!_isActive || vkCode == _settings.ToggleHotKeyVk) return;
+            if (FindProfileForHotkey(vkCode) != null) return;
+
+            if (ApplyMappedKey(vkCode, isDown) && _settings.BlockNativeKey)
+            {
+                int hits = Interlocked.Increment(ref _rawBackstopHits);
+                if (DiagLog.Enabled)
+                {
+                    DiagLog.Write($"raw input backstop: {KeyNameHelper.GetKeyName(vkCode)} {(isDown ? "down" : "up")} slipped past the hook and was applied (#{hits})");
+                }
+            }
+        }
+
+        // The UI thread can add or remove profiles while the hook thread looks here, so don't use an enumerator
+        private ThrottleProfile? FindProfileForHotkey(int vkCode)
+        {
+            var profiles = _settings.Profiles;
+            if (profiles == null) return null;
+
+            try
+            {
+                for (int i = 0; i < profiles.Count; i++)
+                {
+                    var p = profiles[i];
+                    if (p != null && p.HotkeyVkCode != 0 && p.HotkeyVkCode == vkCode) return p;
+                }
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // The list shrank under us; treat as no match
+            }
+            return null;
+        }
+
+        // Updates throttle/brake/steering/button state for a mapped key. Returns false for keys Key Trigger doesn't map.
+        // The binding lookup and its effect happen under one lock, so a profile switch can't land between them.
+        private bool ApplyMappedKey(int vkCode, bool isDown)
+        {
+            lock (_stateLock)
+            {
+                return ApplyMappedKeyLocked(vkCode, isDown);
+            }
+        }
+
+        // Ramp keys wake the engine so their first step doesn't wait for a tick. The wake must come after every write
+        // it announces (the flag, and any MinThrottle/MinBrake first step): a woken engine that still saw the key up
+        // would go back to its 25 ms idle wait. Set() is a full fence, so state written before it is visible.
+        private bool ApplyMappedKeyLocked(int vkCode, bool isDown)
+        {
             // Check Throttle Key
             if (vkCode == _settings.ThrottleVkCode)
             {
+                bool changed = _isThrottleDown != isDown;
                 _isThrottleDown = isDown;
-                if (_settings.BlockNativeKey)
-                {
-                    swallowKey = true;
-                }
 
                 if (!_settings.EnableThrottle)
                 {
@@ -230,7 +330,7 @@ namespace KeyTrigger.Core.Engine
                     _lastEvaluatedThrottle = isDown ? _settings.MaxThrottle : 0.0;
                     _throttleProgress = isDown ? 1.0 : 0.0;
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
-                    return;
+                    return true;
                 }
 
                 if (isDown && _throttleProgress <= 0.0001 && _settings.MinThrottle > 0)
@@ -239,17 +339,15 @@ namespace KeyTrigger.Core.Engine
                     _lastEvaluatedThrottle = _settings.MinThrottle;
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
                 }
-                return;
+                if (changed) _wake.Set();
+                return true;
             }
 
             // Check Brake Key
             if (vkCode == _settings.BrakeVkCode)
             {
+                bool changed = _isBrakeDown != isDown;
                 _isBrakeDown = isDown;
-                if (_settings.BlockNativeKey)
-                {
-                    swallowKey = true;
-                }
 
                 if (!_settings.EnableBrake)
                 {
@@ -257,7 +355,7 @@ namespace KeyTrigger.Core.Engine
                     _lastEvaluatedBrake = isDown ? _settings.MaxBrake : 0.0;
                     _brakeProgress = isDown ? 1.0 : 0.0;
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
-                    return;
+                    return true;
                 }
 
                 if (isDown && _brakeProgress <= 0.0001 && _settings.MinBrake > 0)
@@ -266,85 +364,116 @@ namespace KeyTrigger.Core.Engine
                     _lastEvaluatedBrake = _settings.MinBrake;
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
                 }
-                return;
+                if (changed) _wake.Set();
+                return true;
             }
 
             // Check Steer Left Key
             if (vkCode == _settings.SteerLeftVkCode)
             {
+                bool changed = _isSteerLeftDown != isDown;
                 _isSteerLeftDown = isDown;
-                if (_settings.BlockNativeKey)
-                {
-                    swallowKey = true;
-                }
 
                 if (!_settings.EnableSteering)
                 {
                     // Instant Direct Digital Steer Left
-                    double dir = isDown ? -_settings.MaxSteer : (_isSteerRightDown ? _settings.MaxSteer : 0.0);
-                    _lastEvaluatedSteer = dir;
+                    _lastEvaluatedSteer = DigitalSteer(_isSteerLeftDown, _isSteerRightDown, _settings.MaxSteer);
                     _steerLeftProgress = isDown ? 1.0 : 0.0;
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
+                    return true;
                 }
-                return;
+                if (changed) _wake.Set();
+                return true;
             }
 
             // Check Steer Right Key
             if (vkCode == _settings.SteerRightVkCode)
             {
+                bool changed = _isSteerRightDown != isDown;
                 _isSteerRightDown = isDown;
-                if (_settings.BlockNativeKey)
-                {
-                    swallowKey = true;
-                }
 
                 if (!_settings.EnableSteering)
                 {
                     // Instant Direct Digital Steer Right
-                    double dir = isDown ? _settings.MaxSteer : (_isSteerLeftDown ? -_settings.MaxSteer : 0.0);
-                    _lastEvaluatedSteer = dir;
+                    _lastEvaluatedSteer = DigitalSteer(_isSteerLeftDown, _isSteerRightDown, _settings.MaxSteer);
                     _steerRightProgress = isDown ? 1.0 : 0.0;
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
+                    return true;
                 }
-                return;
+                if (changed) _wake.Set();
+                return true;
             }
 
-            // Alt-Tab safety guard: If Alt is held down, do not process Tab (VK_TAB = 0x09) as controller 'Back' button
-            bool isAltHeld = (NativeMethods.GetAsyncKeyState(0x12) & 0x8000) != 0 ||
-                             (NativeMethods.GetAsyncKeyState(0xA4) & 0x8000) != 0 ||
-                             (NativeMethods.GetAsyncKeyState(0xA5) & 0x8000) != 0;
-            if (isAltHeld && vkCode == 0x09)
+            // Alt-Tab safety guard: If Alt is held down, do not process Tab (VK_TAB = 0x09) as controller 'Back' button.
+            // A Tab press that started with Alt stays ignored through its auto-repeat even after Alt is let go.
+            // Only presses are guarded: a release must always be able to let go of a Back that was pressed before Alt.
+            if (vkCode == VK_TAB)
             {
-                return;
+                if (isDown && (IsKeyDown(VK_MENU) || _tabPressStartedWithAlt))
+                {
+                    _tabPressStartedWithAlt = true;
+                    return false;
+                }
+                if (!isDown)
+                {
+                    _tabPressStartedWithAlt = false;
+                }
             }
 
-            // Check Remapped Controller Buttons (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS)
-            if (_settings.ButtonMappings != null)
+            // Check Remapped Controller Buttons (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS).
+            // Read the list once: the UI can swap it (reset to defaults) while this runs.
+            var mappings = _settings.ButtonMappings;
+            if (mappings != null)
             {
                 ControllerButtonMapping? matched = null;
-                lock (_stateLock)
+                for (int i = 0; i < mappings.Count; i++)
                 {
-                    for (int i = 0; i < _settings.ButtonMappings.Count; i++)
+                    var m = mappings[i];
+                    if (m != null && m.VkCode != 0 && m.VkCode == vkCode)
                     {
-                        var m = _settings.ButtonMappings[i];
-                        if (m != null && m.VkCode != 0 && m.VkCode == vkCode)
-                        {
-                            matched = m;
-                            break;
-                        }
+                        matched = m;
+                        break;
                     }
                 }
 
                 if (matched != null)
                 {
-                    if (_settings.BlockNativeKey)
-                    {
-                        swallowKey = true;
-                    }
                     _gamepadOutput.SetButton(matched.ButtonId, isDown);
-                    return;
+                    return true;
                 }
             }
+
+            return false;
+        }
+
+        // --diag tracing only: whether a key is one Key Trigger maps (so only those are ever named in the log)
+        private bool IsMappedKey(int vk)
+        {
+            if (vk == _settings.ThrottleVkCode || vk == _settings.BrakeVkCode || vk == _settings.SteerLeftVkCode || vk == _settings.SteerRightVkCode)
+            {
+                return true;
+            }
+            var mappings = _settings.ButtonMappings;
+            if (mappings == null) return false;
+            for (int i = 0; i < mappings.Count; i++)
+            {
+                if (mappings[i]?.VkCode == vk) return true;
+            }
+            return false;
+        }
+
+        private const int VK_TAB = 0x09;
+        private const int VK_MENU = 0x12; // Either Alt key
+
+        private static bool IsKeyDown(int vk) => (NativeMethods.GetAsyncKeyState(vk) & 0x8000) != 0;
+
+        // Digital steering: full lock towards the one key held, centred when both or neither are held.
+        // Shared by the hook (instant) and the engine tick so they never disagree.
+        private static double DigitalSteer(bool left, bool right, double maxSteer)
+        {
+            if (left && !right) return -maxSteer;
+            if (right && !left) return maxSteer;
+            return 0.0;
         }
 
         private bool _lastF8Down = false;
@@ -354,6 +483,9 @@ namespace KeyTrigger.Core.Engine
         {
             // Whenever focus changes in Windows (Alt-Tab, mouse click into game or out of game):
             // Immediately synchronize hardware state and force-release any orphaned keys/buttons!
+            // Forget the held-key record too: a release on the lock screen or a UAC prompt is invisible to both the
+            // hook and Raw Input, and a stale entry would be pressed again by the next profile switch.
+            Array.Clear(_keyHeld);
             SynchronizeHardwareState();
         }
 
@@ -437,29 +569,31 @@ namespace KeyTrigger.Core.Engine
             // Fallback 1000Hz hardware polling ONLY if WH_KEYBOARD_LL hook failed to install
             try
             {
-                // 1. Hardware F8 Master Toggle hotkey
+                // 1. Hardware F8 Master Toggle hotkey (the toggle itself runs on the UI thread, as with the hook)
                 if (_settings.ToggleHotKeyVk != 0)
                 {
-                    bool isF8Down = (NativeMethods.GetAsyncKeyState(_settings.ToggleHotKeyVk) & 0x8000) != 0;
+                    bool isF8Down = IsKeyDown(_settings.ToggleHotKeyVk);
                     if (isF8Down && !_lastF8Down)
                     {
-                        IsActive = !IsActive;
+                        RunOnUiThread(() => IsActive = !IsActive);
                     }
                     _lastF8Down = isF8Down;
                 }
 
-                // 2. Hardware Profile switch hotkeys (F1-F4)
-                if (_settings.Profiles != null)
+                // 2. Hardware Profile switch hotkeys (F1-F4). Indexed, because the UI can edit the list meanwhile.
+                var profiles = _settings.Profiles;
+                if (profiles != null)
                 {
-                    foreach (var profile in _settings.Profiles)
+                    for (int i = 0; i < profiles.Count; i++)
                     {
+                        var profile = profiles[i];
                         if (profile.HotkeyVkCode != 0)
                         {
-                            bool isKeyDown = (NativeMethods.GetAsyncKeyState(profile.HotkeyVkCode) & 0x8000) != 0;
+                            bool isKeyDown = IsKeyDown(profile.HotkeyVkCode);
                             if (isKeyDown && _lastProfileHotkeyDown != profile.HotkeyVkCode)
                             {
                                 _lastProfileHotkeyDown = profile.HotkeyVkCode;
-                                SwitchToProfile(profile);
+                                RunOnUiThread(() => SwitchToProfile(profile));
                                 break;
                             }
                             else if (!isKeyDown && _lastProfileHotkeyDown == profile.HotkeyVkCode)
@@ -509,9 +643,7 @@ namespace KeyTrigger.Core.Engine
                 }
 
                 // Alt-Tab safety guard in hardware polling:
-                bool isAltDown = (NativeMethods.GetAsyncKeyState(0x12) & 0x8000) != 0 ||
-                                 (NativeMethods.GetAsyncKeyState(0xA4) & 0x8000) != 0 ||
-                                 (NativeMethods.GetAsyncKeyState(0xA5) & 0x8000) != 0;
+                bool isAltDown = IsKeyDown(VK_MENU);
 
                 // 4. Controller Button Mappings (A, B, X, Y, LB, RB, Start, Back, D-Pad, LS, RS)
                 if (_settings.ButtonMappings != null)
@@ -546,11 +678,13 @@ namespace KeyTrigger.Core.Engine
         {
             var sw = Stopwatch.StartNew();
             long lastTick = sw.ElapsedTicks;
-            long lastTelemetryTick = 0;
+            long lastDiagSummaryMs = 0;
             double invFrequency = 1.0 / Stopwatch.Frequency;
+            bool lastWaitWasIdle = false;
 
             while (_isRunning)
             {
+                bool active = _isActive;
                 try
                 {
                     long currentTick = sw.ElapsedTicks;
@@ -559,10 +693,14 @@ namespace KeyTrigger.Core.Engine
 
                     if (deltaSeconds > 0.05) deltaSeconds = 0.05; // Prevent jump spikes
 
+                    // Woken from an idle wait by a key press: the key has been down for at most one fast tick, so don't
+                    // let the idle time count as ramp time (a short attack would otherwise jump on the first step)
+                    if (lastWaitWasIdle && deltaSeconds > ActiveTickMs / 1000.0) deltaSeconds = ActiveTickMs / 1000.0;
+
                     // Direct hardware keyboard polling fallback (only active if hook is not installed)
                     PollHardwareInputs();
 
-                    if (_isActive)
+                    if (active)
                     {
                         UpdateRamp(deltaSeconds);
                     }
@@ -575,34 +713,25 @@ namespace KeyTrigger.Core.Engine
                         _lastEvaluatedThrottle = 0.0;
                         _lastEvaluatedBrake = 0.0;
                         _lastEvaluatedSteer = 0.0;
+
+                        // A mapped button pressed on the hook thread in the same instant as deactivation can land
+                        // after ResetAll; clear it here like the triggers are
+                        if (_gamepadOutput.HasPressedButtons)
+                        {
+                            _gamepadOutput.ResetButtons();
+                        }
                     }
 
-                    // Ultra-responsive Virtual Gamepad Output
+                    // Send the pad state (only goes to the driver when a value changed, or for the 50 ms heartbeat)
                     _gamepadOutput.Update(_lastEvaluatedThrottle, _lastEvaluatedBrake, _lastEvaluatedSteer);
 
-                    // Publish UI telemetry at a clean ~30 FPS (every 33ms) to use minimal CPU resources
-                    long currentMs = sw.ElapsedMilliseconds;
-                    if (currentMs - lastTelemetryTick >= 33)
+                    if (DiagLog.Enabled)
                     {
-                        lastTelemetryTick = currentMs;
-
-                        if (TelemetryUpdated != null)
+                        long currentMs = sw.ElapsedMilliseconds;
+                        if (currentMs - lastDiagSummaryMs >= 30000)
                         {
-                            var telemetry = new ThrottleTelemetry
-                            {
-                                IsActive = _isActive,
-                                IsThrottleKeyPressed = _isThrottleDown,
-                                IsBrakeKeyPressed = _isBrakeDown,
-                                ThrottleProgress = _throttleProgress,
-                                OutputThrottle = _lastEvaluatedThrottle,
-                                BrakeProgress = _brakeProgress,
-                                OutputBrake = _lastEvaluatedBrake,
-                                ActiveOutputMode = OutputMode.VirtualGamepad,
-                                IsOutputAvailable = _gamepadOutput.IsAvailable,
-                                OutputStatusMessage = _gamepadOutput.StatusMessage
-                            };
-
-                            TelemetryUpdated.Invoke(telemetry);
+                            lastDiagSummaryMs = currentMs;
+                            DiagLog.Write($"hook health: installed={_keyboardHook.IsInstalled} rehooks={_keyboardHook.RehookCount} removed-by-windows={_keyboardHook.RemovedByWindowsCount} raw-backstop-catches={_rawBackstopHits} active={_isActive} pad-slot={_gamepadOutput.UserIndex}");
                         }
                     }
                 }
@@ -611,8 +740,24 @@ namespace KeyTrigger.Core.Engine
                     // Ignore dispatch errors
                 }
 
-                // 1ms kernel-level sleep yielding CPU (enabled by TimeBeginPeriod(1)) -> 0% CPU usage!
-                Thread.Sleep(1);
+                // Tick every 1 ms while anything is held or still ramping (needs the 1 ms timer resolution set up in
+                // Start). Otherwise there is nothing to compute, so idle at 25 ms: a ramp key's press or release, or
+                // activation, sets _wake and the next tick runs at once, so idling never delays input. (The heartbeat
+                // still runs: 25 ms is inside its 50 ms period.) The fallback polling path (no hook) has to keep
+                // reading the keyboard at full rate.
+                bool busy = active &&
+                            (_isThrottleDown || _isBrakeDown || _isSteerLeftDown || _isSteerRightDown ||
+                             _throttleProgress > 0.0 || _brakeProgress > 0.0 || _steerLeftProgress > 0.0 || _steerRightProgress > 0.0);
+                bool fastTick = busy || !_keyboardHook.IsInstalled;
+                lastWaitWasIdle = !fastTick;
+                try
+                {
+                    _wake.WaitOne(fastTick ? ActiveTickMs : IdleTickMs);
+                }
+                catch (ObjectDisposedException)
+                {
+                    break; // Shutting down
+                }
             }
         }
 
@@ -741,10 +886,7 @@ namespace KeyTrigger.Core.Engine
             else
             {
                 // Direct digital controller steering: instant max steering when pressed, 0.0 when released
-                double dir = 0.0;
-                if (_isSteerLeftDown && !_isSteerRightDown) dir = -_settings.MaxSteer;
-                else if (_isSteerRightDown && !_isSteerLeftDown) dir = _settings.MaxSteer;
-                _lastEvaluatedSteer = dir;
+                _lastEvaluatedSteer = DigitalSteer(_isSteerLeftDown, _isSteerRightDown, _settings.MaxSteer);
                 _steerLeftProgress = _isSteerLeftDown ? 1.0 : 0.0;
                 _steerRightProgress = _isSteerRightDown ? 1.0 : 0.0;
             }
@@ -765,24 +907,31 @@ namespace KeyTrigger.Core.Engine
                 _lastEvaluatedThrottle = 0.0;
                 _lastEvaluatedBrake = 0.0;
                 _lastEvaluatedSteer = 0.0;
-                _gamepadOutput.Reset();
-                _gamepadOutput.ResetButtons();
-                _gamepadOutput.ForceFlush();
+                _gamepadOutput.ResetToNeutral();
             }
         }
 
         public void Dispose()
         {
             _isRunning = false;
+            _wake.Set();
+            bool engineStopped = true;
             try
             {
-                _engineThread?.Join(300);
+                engineStopped = _engineThread?.Join(300) ?? true;
             }
             catch { }
 
-            NativeMethods.TimeEndPeriod(1);
+            if (_timerPeriodSet)
+            {
+                NativeMethods.TimeEndPeriod(1);
+                _timerPeriodSet = false;
+            }
             _keyboardHook.Dispose();
             _gamepadOutput.Dispose();
+
+            // A loop still finishing an iteration would wait on it next; leave it to the finalizer in that case
+            if (engineStopped) _wake.Dispose();
         }
     }
 }

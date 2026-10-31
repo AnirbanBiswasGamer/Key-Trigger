@@ -24,21 +24,16 @@
 
     <Window.Resources>
         <!-- Windows 11 Frosted Glass Monochrome Palette (No Colors, Even Highlights) -->
-        <SolidColorBrush x:Key="BgPrimary" Color="#00000000" />
         <SolidColorBrush x:Key="BgSidebar" Color="#18000000" />
         <SolidColorBrush x:Key="BgCard" Color="#12FFFFFF" />
-        <SolidColorBrush x:Key="BgCardHover" Color="#1EFFFFFF" />
         <SolidColorBrush x:Key="BgInput" Color="#18FFFFFF" />
         <SolidColorBrush x:Key="BorderBrushColor" Color="#22FFFFFF" />
         <SolidColorBrush x:Key="BorderSubtle" Color="#15FFFFFF" />
-        <SolidColorBrush x:Key="BorderActive" Color="#45FFFFFF" />
 
         <!-- Crisp Monochrome (No Colors, Even Highlights) -->
         <SolidColorBrush x:Key="AccentPrimary" Color="#FFFFFF" />
         <SolidColorBrush x:Key="AccentSecondary" Color="#CCCCCC" />
         <SolidColorBrush x:Key="StatusActive" Color="#FFFFFF" />
-        <SolidColorBrush x:Key="StatusDisabled" Color="#666666" />
-        <SolidColorBrush x:Key="StatusWarning" Color="#AAAAAA" />
 
         <!-- Monochrome Channel Palette -->
         <SolidColorBrush x:Key="ChannelThrottle" Color="#FFFFFF" />
@@ -57,7 +52,6 @@
         <StreamGeometry x:Key="IconSteering">M12 2a10 10 0 100 20 10 10 0 000-20zm0 2c3.9 0 7.15 2.8 7.86 6.5h-3.92a4 4 0 00-3.94-3.5V4zm-1 0v3a4 4 0 00-3.94 3.5H3.14C3.85 6.8 7.1 4 11 4zm-7.86 8.5h4.08A4 4 0 0011 16v4c-4.42-.5-7.9-4-8.86-7.5zm16.72 0c-.96 3.5-4.44 7-8.86 7.5v-4a4 4 0 003.78-3.5h4.08z</StreamGeometry>
         <StreamGeometry x:Key="IconGamepad">M6 5h12a5 5 0 015 5v5a4 4 0 01-6.8 2.8L13.8 15h-3.6l-2.4 2.8A4 4 0 011 15v-5a5 5 0 015-5zm-1 7H3v2a2 2 0 003.4 1.4L8.2 13H5zm14 0h-3.2l1.8 2.4A2 2 0 0021 14v-2h-2zM7 9v1H6v1h1v1h1v-1h1v-1H8V9H7zm10 0a1 1 0 100 2 1 1 0 000-2zm-2 2a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 100 2 1 1 0 000-2zm-2 2a1 1 0 100 2 1 1 0 000-2z</StreamGeometry>
         <StreamGeometry x:Key="IconProfiles">M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5</StreamGeometry>
-        <StreamGeometry x:Key="IconSettings">M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84c-.24 0-.44.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.5a3.5 3.5 0 110-7 3.5 3.5 0 010 7z</StreamGeometry>
         <StreamGeometry x:Key="IconKeyboard">M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 5H4v-2h3v2zm0-3H4v-2h3v2zm0-3H4V8h3v2zm13 8h-9v-2h9v2zm0-3h-2v-2h2v2zm0-3h-2V8h2v2zm-3 3h-2v-2h2v2zm0-3h-2V8h2v2z</StreamGeometry>
         <StreamGeometry x:Key="IconTimer">M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42C16.07 4.74 14.12 4 12 4c-4.97 0-9 4.03-9 9s4.02 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z</StreamGeometry>
         <StreamGeometry x:Key="IconGraph">M3.5 18.5l6-6 4 4L22 6.92l-1.41-1.41-7.09 7.09-4-4L2 16.09l1.5 2.41z</StreamGeometry>
@@ -193,28 +187,6 @@
                                 <Setter Property="Foreground" Value="{StaticResource AccentPrimary}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Sub-tab pill button style (for steering Left/Right) -->
-        <Style x:Key="SubTabPillBtn" TargetType="Button">
-            <Setter Property="Background" Value="#35161C26" />
-            <Setter Property="BorderBrush" Value="#222A3A" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Foreground" Value="{StaticResource TextSecondary}" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Padding" Value="16,6" />
-            <Setter Property="Margin" Value="0,0,8,0" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
-                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -856,7 +828,7 @@
                                                 <TextBlock x:Name="TxtViGemBadge" Text="INSTALLED &amp; READY" FontSize="9" FontWeight="Bold" Foreground="{StaticResource StatusActive}" />
                                             </Border>
                                         </StackPanel>
-                                        <TextBlock x:Name="TxtViGemStatusMessage" Text="Driver connected." FontSize="12" Foreground="{StaticResource TextSecondary}" />
+                                        <TextBlock x:Name="TxtViGemStatusMessage" Text="Driver connected." FontSize="12" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" Margin="0,0,16,0" />
                                     </StackPanel>
                                     <Button x:Name="BtnDownloadViGem" Click="BtnDownloadViGem_Click" Grid.Column="1" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" Padding="16,8">
                                         <StackPanel Orientation="Horizontal">
@@ -1009,7 +981,6 @@
                                         <TextBlock Text="Curve Type: " FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <ComboBox x:Name="CmbCurveType" SelectionChanged="CmbCurveType_SelectionChanged" Width="180" Height="30" />
                                     </StackPanel>
-                                    <TextBlock x:Name="TxtCurveDescription" Visibility="Collapsed" />
 
                                     
 
@@ -1017,9 +988,8 @@
 
                                     <!-- Interactive Bezier Curve Canvas -->
                                     <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="180" Margin="0,0,0,10">
-                                        <Canvas x:Name="CurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="CurveEditorCanvas_SizeChanged" MouseDown="CurveEditorCanvas_MouseDown" MouseMove="CurveEditorCanvas_MouseMove" MouseUp="CurveEditorCanvas_MouseUp" />
+                                        <Canvas x:Name="CurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="CurveEditorCanvas_SizeChanged" MouseDown="CurveEditorCanvas_MouseDown" MouseMove="CurveEditorCanvas_MouseMove" MouseUp="CurveEditorCanvas_MouseUp" LostMouseCapture="CurveEditorCanvas_LostMouseCapture" />
                                     </Border>
-                                    <TextBlock x:Name="TxtCurveHandlesReadout" Visibility="Collapsed" Text="P1 Launch: (0.25, 0.10) • P2 Top: (0.75, 0.90)" FontSize="10" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right" />
                                 </StackPanel>
                             </Border>
 
@@ -1197,16 +1167,14 @@
                                         <TextBlock Text="Curve Type: " FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                         <ComboBox x:Name="CmbBrakeCurveType" SelectionChanged="CmbBrakeCurveType_SelectionChanged" Width="180" Height="30" />
                                     </StackPanel>
-                                    <TextBlock x:Name="TxtBrakeCurveDescription" Visibility="Collapsed" />
 
                                     
 
                                     
                                     <!-- Interactive Bezier Curve Canvas -->
                                     <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="180" Margin="0,0,0,10">
-                                        <Canvas x:Name="BrakeCurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="BrakeCurveEditorCanvas_SizeChanged" MouseDown="BrakeCurveEditorCanvas_MouseDown" MouseMove="BrakeCurveEditorCanvas_MouseMove" MouseUp="BrakeCurveEditorCanvas_MouseUp" />
+                                        <Canvas x:Name="BrakeCurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="BrakeCurveEditorCanvas_SizeChanged" MouseDown="BrakeCurveEditorCanvas_MouseDown" MouseMove="BrakeCurveEditorCanvas_MouseMove" MouseUp="BrakeCurveEditorCanvas_MouseUp" LostMouseCapture="BrakeCurveEditorCanvas_LostMouseCapture" />
                                     </Border>
-                                    <TextBlock x:Name="TxtBrakeCurveHandlesReadout" Visibility="Collapsed" Text="P1 Initial: (0.25, 0.10) • P2 Lockup: (0.75, 0.90)" FontSize="10" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right" />
                                 </StackPanel>
                             </Border>
 
@@ -1296,7 +1264,7 @@
                                                     <TextBlock Text="Steer Left (LS ←)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" />
                                                     <TextBlock x:Name="TxtBoundSteerLeftKey" Text="[ A ]" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,2,0,0" />
                                                 </StackPanel>
-                                                <Button x:Name="BtnRebindSteerLeft" Click="BtnRebindSteerLeft_Click" Grid.Column="1" Content="Rebind" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                                <Button x:Name="BtnRebindSteerLeft" Click="BtnBindSteerLeftKey_Click" Grid.Column="1" Content="Rebind" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
                                             </Grid>
                                         </Border>
 
@@ -1311,7 +1279,7 @@
                                                     <TextBlock Text="Steer Right (LS →)" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextSecondary}" />
                                                     <TextBlock x:Name="TxtBoundSteerRightKey" Text="[ D ]" FontSize="18" FontWeight="Bold" Foreground="#FFFFFF" Margin="0,2,0,0" />
                                                 </StackPanel>
-                                                <Button x:Name="BtnRebindSteerRight" Click="BtnRebindSteerRight_Click" Grid.Column="1" Content="Rebind" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
+                                                <Button x:Name="BtnRebindSteerRight" Click="BtnBindSteerRightKey_Click" Grid.Column="1" Content="Rebind" Style="{StaticResource CardActionBtn}" VerticalAlignment="Center" />
                                             </Grid>
                                         </Border>
                                     </Grid>
@@ -1412,16 +1380,14 @@
                                             <TextBlock Text="Curve Type: " FontSize="12" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                             <ComboBox x:Name="CmbSteerCurveType" SelectionChanged="CmbSteerCurveType_SelectionChanged" Width="180" Height="30" />
                                         </StackPanel>
-                                    <TextBlock x:Name="TxtSteerCurveDescription" Visibility="Collapsed" />
                                     </Grid>
 
                                     
 
                                     <!-- Interactive Bezier Curve Canvas -->
                                     <Border Background="{StaticResource BgInput}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Height="180" Margin="0,0,0,10">
-                                        <Canvas x:Name="SteerCurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="SteerCurveEditorCanvas_SizeChanged" MouseDown="SteerCurveEditorCanvas_MouseDown" MouseMove="SteerCurveEditorCanvas_MouseMove" MouseUp="SteerCurveEditorCanvas_MouseUp" />
+                                        <Canvas x:Name="SteerCurveEditorCanvas" Background="Transparent" ClipToBounds="True" SizeChanged="SteerCurveEditorCanvas_SizeChanged" MouseDown="SteerCurveEditorCanvas_MouseDown" MouseMove="SteerCurveEditorCanvas_MouseMove" MouseUp="SteerCurveEditorCanvas_MouseUp" LostMouseCapture="SteerCurveEditorCanvas_LostMouseCapture" />
                                     </Border>
-                                    <TextBlock x:Name="TxtSteerCurveHandlesReadout" Visibility="Collapsed" Text="P1 Center: (0.25, 0.10) • P2 Lock: (0.75, 0.90)" FontSize="10" Foreground="{StaticResource TextMuted}" HorizontalAlignment="Right" />
                                 </StackPanel>
                             </Border>
 
@@ -1567,7 +1533,6 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                         <TextBlock Text="Profile Hotkey" FontWeight="Bold" FontSize="14" Foreground="#FFFFFF" />
-                                        <TextBlock x:Name="TxtActiveProfileName" Visibility="Collapsed" />
                                         
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">

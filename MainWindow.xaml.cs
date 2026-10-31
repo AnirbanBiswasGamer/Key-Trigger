@@ -21,16 +21,34 @@ namespace KeyTrigger
         private readonly AppSettings _settings;
         private readonly ThrottleEngine _engine;
         private readonly GameWatcher _gameWatcher;
-        private bool _isCapturingKey;
-        private bool _isCapturingBrakeKey;
-        private bool _isCapturingSteerLeftKey;
-        private bool _isCapturingSteerRightKey;
-        private bool _isCapturingProfileHotkey;
+
+        // Which binding the next captured key goes to. One value, so two bind buttons can never both be armed.
+        private enum CaptureTarget
+        {
+            None,
+            Throttle,
+            Brake,
+            SteerLeft,
+            SteerRight,
+            ProfileHotkey,
+            RemapButton
+        }
+
+        private CaptureTarget _captureTarget = CaptureTarget.None;
         private string? _capturingRemapButtonId;
         private string? _editingProfileId;
         private bool _isUpdatingUiFromSettings;
-        private volatile bool _isWindowMinimized;
-        private DispatcherTimer? _toastTimer;
+        private readonly DispatcherTimer _toastTimer;
+
+        // Slider ticks and curve drags fire many times a second; serializing every profile and writing the file
+        // on each one stalled the UI thread and churned the GC. They restart this one-shot timer instead.
+        private readonly DispatcherTimer _saveTimer;
+
+        private Style? _cardActionBtnStyle;
+        private Style CardActionBtnStyle => _cardActionBtnStyle ??= (Style)FindResource("CardActionBtn");
+
+        private Brush? _textSecondaryBrush;
+        private Brush TextSecondaryBrush => _textSecondaryBrush ??= (Brush)FindResource("TextSecondary");
 
         public MainWindow()
         {
@@ -41,17 +59,8 @@ namespace KeyTrigger
 
             InitializeComponent();
 
-            try
-            {
-                var iconUri = new Uri("pack://application:,,,/Assets/app_icon.ico", UriKind.RelativeOrAbsolute);
-                Icon = System.Windows.Media.Imaging.BitmapFrame.Create(iconUri);
-            }
-            catch { }
-
-            StateChanged += (s, e) =>
-            {
-                _isWindowMinimized = (WindowState == WindowState.Minimized);
-            };
+            // The live telemetry bars are only visible on Home, so don't tick while minimized
+            StateChanged += (s, e) => UpdateTelemetryTimer();
 
             // Setup Toast Auto-fade Timer
             _toastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.8) };
@@ -60,6 +69,9 @@ namespace KeyTrigger
                 ProfileToastBanner.Visibility = Visibility.Collapsed;
                 _toastTimer.Stop();
             };
+
+            _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+            _saveTimer.Tick += (s, e) => SaveNow();
 
             // Populate Response Curves dropdown
             PopulateCurveDropdown();
@@ -82,18 +94,37 @@ namespace KeyTrigger
 
             // Setup telemetry and navigation
             InitTelemetryTimer();
-            NavigateToPage("Home");
 
-            // Check ViGEm availability
-            CheckViGemStatus();
-
-            Loaded += (s, e) =>
-            {
-                NavigateToPage("Home");
-                RenderProfileChips();
-                RenderProfileCards();
-            };
+            // Home's page setup also checks ViGEm availability; chips were rendered by LoadSettingsIntoControls
+            Loaded += (s, e) => NavigateToPage("Home");
             Closing += MainWindow_Closing;
+        }
+
+        // Settings take effect live (the engine reads _settings directly); only the disk write is deferred
+        private void RequestSave()
+        {
+            _saveTimer.Stop();
+            _saveTimer.Start();
+        }
+
+        private void FlushSave()
+        {
+            if (_saveTimer.IsEnabled) SaveNow();
+        }
+
+        private void SaveNow()
+        {
+            _saveTimer.Stop();
+            _settings.Save();
+        }
+
+        private void ShowToast(string title, string details)
+        {
+            TxtToastProfileName.Text = title;
+            TxtToastDetails.Text = details;
+            ProfileToastBanner.Visibility = Visibility.Visible;
+            _toastTimer.Stop();
+            _toastTimer.Start();
         }
 
         
@@ -159,9 +190,10 @@ namespace KeyTrigger
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
+            _telemetryTimer?.Stop();
             _gameWatcher.Dispose();
             _engine.Dispose();
-            _settings.Save();
+            SaveNow();
         }
 
         private void PopulateCurveDropdown()
@@ -198,7 +230,6 @@ namespace KeyTrigger
 
             // Throttle Curve
             CmbCurveType.SelectedItem = _settings.CurveType;
-            TxtCurveDescription.Text = ResponseCurves.GetDescription(_settings.CurveType);
 
             // Throttle Limits
             SliderMinThrottle.Value = _settings.MinThrottle * 100.0;
@@ -215,7 +246,6 @@ namespace KeyTrigger
             TxtBrakeReleaseDisplay.Text = $"{_settings.BrakeReleaseTimeSeconds:0.00} s";
 
             CmbBrakeCurveType.SelectedItem = _settings.BrakeCurveType;
-            TxtBrakeCurveDescription.Text = ResponseCurves.GetDescription(_settings.BrakeCurveType);
 
             SliderMinBrake.Value = _settings.MinBrake * 100.0;
             TxtMinBrakeDisplay.Text = $"{_settings.MinBrake * 100.0:F0}%";
@@ -231,7 +261,6 @@ namespace KeyTrigger
             if (TxtSteerReleaseDisplay != null) TxtSteerReleaseDisplay.Text = $"{_settings.SteerReleaseTimeSeconds:0.00} s";
 
             if (CmbSteerCurveType != null) CmbSteerCurveType.SelectedItem = _settings.SteerCurveType;
-            if (TxtSteerCurveDescription != null) TxtSteerCurveDescription.Text = ResponseCurves.GetDescription(_settings.SteerCurveType);
 
             if (SliderMinSteer != null) SliderMinSteer.Value = _settings.MinSteer * 100.0;
             if (TxtMinSteerDisplay != null) TxtMinSteerDisplay.Text = $"{_settings.MinSteer * 100.0:F0}%";
@@ -270,29 +299,30 @@ namespace KeyTrigger
                     int slot = _engine.GamepadOutput.UserIndex;
                     if (slot > 0)
                     {
-                        BadgeViGemStatus.Background = new SolidColorBrush(Color.FromArgb(0x30, 0x3F, 0x2E, 0x1A));
-                        BadgeViGemStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
+                        BadgeViGemStatus.Background = Palette.WarnBadgeBg;
+                        BadgeViGemStatus.BorderBrush = Palette.Amber500;
                         TxtViGemBadge.Text = $"PLAYER {slot + 1} (SLOT {slot})";
-                        TxtViGemBadge.Foreground = new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B));
+                        TxtViGemBadge.Foreground = Palette.Amber500;
                         TxtViGemStatusMessage.Text = $"Warning: Connected as Player {slot + 1}. GRID only listens to Player 1! Unplug other controllers.";
                     }
                     else
                     {
-                        BadgeViGemStatus.Background = new SolidColorBrush(Color.FromArgb(0x30, 0x1A, 0x38, 0x28));
-                        BadgeViGemStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                        BadgeViGemStatus.Background = Palette.OkBadgeBg;
+                        BadgeViGemStatus.BorderBrush = Palette.Emerald;
                         TxtViGemBadge.Text = "CONNECTED (PLAYER 1)";
-                        TxtViGemBadge.Foreground = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
-                        TxtViGemStatusMessage.Text = "Connected as Player 1 (Virtual Xbox 360 Controller). Ready for GRID!";
+                        TxtViGemBadge.Foreground = Palette.Emerald;
+                        // Codemasters (EGO engine) games drive with one device at a time and ignore the pad while a keyboard preset is selected
+                        TxtViGemStatusMessage.Text = "Connected as Player 1 (Virtual Xbox 360 Controller). In GRID / Codemasters games, set Options > Controls to the Xbox 360 Controller preset.";
                     }
                     if (TxtBtnViGemAction != null) TxtBtnViGemAction.Text = "Reinstall Driver";
                     if (BtnDownloadViGem != null) BtnDownloadViGem.Visibility = Visibility.Visible;
                 }
                 else
                 {
-                    BadgeViGemStatus.Background = new SolidColorBrush(Color.FromArgb(0x30, 0x3F, 0x1A, 0x1A));
-                    BadgeViGemStatus.BorderBrush = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                    BadgeViGemStatus.Background = Palette.ErrorBadgeBg;
+                    BadgeViGemStatus.BorderBrush = Palette.Red;
                     TxtViGemBadge.Text = "NOT INSTALLED";
-                    TxtViGemBadge.Foreground = new SolidColorBrush(Color.FromRgb(0xEF, 0x44, 0x44));
+                    TxtViGemBadge.Foreground = Palette.Red;
                     TxtViGemStatusMessage.Text = "ViGEmBus driver required for virtual Xbox controller.";
                     if (TxtBtnViGemAction != null) TxtBtnViGemAction.Text = "Install Driver";
                     if (BtnDownloadViGem != null) BtnDownloadViGem.Visibility = Visibility.Visible;
@@ -302,7 +332,9 @@ namespace KeyTrigger
 
         private void RenderProfileCards()
         {
-            if (PnlProfileCardsList == null) return;
+            // The cards are rebuilt on every edit; while the page is hidden that is wasted work, and
+            // NavigateToPage("Profiles") rebuilds them on entry anyway
+            if (PnlProfileCardsList == null || _currentPage != "Profiles") return;
             PnlProfileCardsList.Children.Clear();
 
             string activeId = _settings.ActiveProfileId;
@@ -314,10 +346,10 @@ namespace KeyTrigger
 
                 var card = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(0x16, 0x1B, 0x26)),
+                    Background = Palette.CardBg,
                     BorderBrush = isActive
-                        ? new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8))
-                        : (isEditing ? new SolidColorBrush(Color.FromArgb(180, 0x38, 0xBD, 0xF8)) : new SolidColorBrush(Color.FromRgb(0x22, 0x2A, 0x3A))),
+                        ? Palette.Sky400
+                        : (isEditing ? Palette.Sky400AB4 : Palette.ProfileCardBorder),
                     BorderThickness = new Thickness(isActive || isEditing ? 1.5 : 1),
                     CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(18, 16, 18, 16),
@@ -338,7 +370,7 @@ namespace KeyTrigger
                     editRow.Children.Add(new System.Windows.Shapes.Path
                     {
                         Data = (Geometry)FindResource("IconEdit"),
-                        Fill = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8)),
+                        Fill = Palette.Sky400,
                         Width = 14,
                         Height = 14,
                         Stretch = Stretch.Uniform,
@@ -352,8 +384,8 @@ namespace KeyTrigger
                         FontWeight = FontWeights.Bold,
                         FontSize = 14,
                         Foreground = Brushes.White,
-                        Background = new SolidColorBrush(Color.FromRgb(0x0E, 0x12, 0x1B)),
-                        BorderBrush = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8)),
+                        Background = Palette.RenameBoxBg,
+                        BorderBrush = Palette.Sky400,
                         BorderThickness = new Thickness(1),
                         Padding = new Thickness(8, 4, 8, 4),
                         MinWidth = 180,
@@ -371,13 +403,9 @@ namespace KeyTrigger
                             {
                                 _settings.SyncToActiveProfile();
                             }
-                            _settings.Save();
+                            SaveNow();
                             RenderProfileChips();
-                            TxtToastProfileName.Text = pTarget.Name;
-                            TxtToastDetails.Text = $"Profile Renamed to '{pTarget.Name}'";
-                            ProfileToastBanner.Visibility = Visibility.Visible;
-                            _toastTimer?.Stop();
-                            _toastTimer?.Start();
+                            ShowToast(pTarget.Name, $"Profile Renamed to '{pTarget.Name}'");
                         }
                         _editingProfileId = null;
                         RenderProfileCards();
@@ -410,7 +438,7 @@ namespace KeyTrigger
                     var saveBtn = new Button
                     {
                         Content = "Save",
-                        Style = (Style)FindResource("CardActionBtn"),
+                        Style = CardActionBtnStyle,
                         Padding = new Thickness(16, 7, 16, 7),
                         Margin = new Thickness(0, 0, 8, 0),
                         Cursor = Cursors.Hand
@@ -421,7 +449,7 @@ namespace KeyTrigger
                     var cancelBtn = new Button
                     {
                         Content = "Cancel",
-                        Style = (Style)FindResource("CardActionBtn"),
+                        Style = CardActionBtnStyle,
                         Padding = new Thickness(14, 7, 14, 7),
                         Cursor = Cursors.Hand
                     };
@@ -438,7 +466,7 @@ namespace KeyTrigger
                     titleRow.Children.Add(new System.Windows.Shapes.Path
                     {
                         Data = (Geometry)FindResource("IconProfiles"),
-                        Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                        Fill = Palette.Slate400,
                         Width = 14,
                         Height = 14,
                         Stretch = Stretch.Uniform,
@@ -468,7 +496,7 @@ namespace KeyTrigger
                     var renameBtn = new Button
                     {
                         ToolTip = "Rename Profile",
-                        Style = (Style)FindResource("CardActionBtn"),
+                        Style = CardActionBtnStyle,
                         Padding = new Thickness(12, 7, 12, 7),
                         Margin = new Thickness(0, 0, 8, 0),
                         Cursor = Cursors.Hand
@@ -477,7 +505,7 @@ namespace KeyTrigger
                     renameContent.Children.Add(new System.Windows.Shapes.Path
                     {
                         Data = (Geometry)FindResource("IconEdit"),
-                        Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                        Fill = Palette.Slate400,
                         Width = 11,
                         Height = 11,
                         Stretch = Stretch.Uniform,
@@ -498,7 +526,7 @@ namespace KeyTrigger
                         var switchBtn = new Button
                         {
                             Content = "Switch to this",
-                            Style = (Style)FindResource("CardActionBtn"),
+                            Style = CardActionBtnStyle,
                             Padding = new Thickness(16, 7, 16, 7),
                             Cursor = Cursors.Hand
                         };
@@ -513,14 +541,14 @@ namespace KeyTrigger
                             var delBtn = new Button
                             {
                                 ToolTip = "Delete Profile",
-                                Style = (Style)FindResource("CardActionBtn"),
+                                Style = CardActionBtnStyle,
                                 Padding = new Thickness(10, 7, 10, 7),
                                 Margin = new Thickness(8, 0, 0, 0),
                                 Cursor = Cursors.Hand,
                                 Content = new System.Windows.Shapes.Path
                                 {
                                     Data = (Geometry)FindResource("IconClose"),
-                                    Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                                    Fill = Palette.Slate400,
                                     Width = 9,
                                     Height = 9,
                                     Stretch = Stretch.Uniform
@@ -534,13 +562,13 @@ namespace KeyTrigger
                     {
                         var activePill = new Border
                         {
-                            Background = new SolidColorBrush(Color.FromRgb(0x14, 0x2A, 0x3B)),
-                            BorderBrush = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)),
+                            Background = Palette.ActivePillBg,
+                            BorderBrush = Palette.Cyan,
                             BorderThickness = new Thickness(1),
                             CornerRadius = new CornerRadius(6),
                             Padding = new Thickness(16, 7, 16, 7)
                         };
-                        activePill.Child = new TextBlock { Text = "Active Profile", FontWeight = FontWeights.Bold, FontSize = 12, Foreground = new SolidColorBrush(Color.FromRgb(0x00, 0xE5, 0xFF)) };
+                        activePill.Child = new TextBlock { Text = "Active Profile", FontWeight = FontWeights.Bold, FontSize = 12, Foreground = Palette.Cyan };
                         btnStack.Children.Add(activePill);
                     }
                 }
@@ -550,7 +578,7 @@ namespace KeyTrigger
                     Text = $"Curves  —  Throttle: {profile.CurveType}   •   Brake: {profile.BrakeCurveType}   •   Steer: {profile.SteerCurveType}",
                     FontSize = 12,
                     FontWeight = FontWeights.SemiBold,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8)),
+                    Foreground = Palette.Sky400,
                     Margin = new Thickness(0, 3, 0, 0)
                 };
                 infoStack.Children.Add(curveDesc);
@@ -559,7 +587,7 @@ namespace KeyTrigger
                 {
                     Text = $"Timings —  Throttle: {profile.AttackTimeSeconds:F2}s / {profile.ReleaseTimeSeconds:F2}s   •   Brake: {profile.BrakeAttackTimeSeconds:F2}s / {profile.BrakeReleaseTimeSeconds:F2}s   •   Steer: {profile.SteerAttackTimeSeconds:F2}s / {profile.SteerReleaseTimeSeconds:F2}s",
                     FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)),
+                    Foreground = Palette.Gray,
                     Margin = new Thickness(0, 2, 0, 0)
                 };
                 infoStack.Children.Add(timingDesc);
@@ -594,11 +622,11 @@ namespace KeyTrigger
                     Margin = new Thickness(0, 0, 8, 8),
                     Cursor = Cursors.Hand,
                     Background = isActive
-                        ? new SolidColorBrush(Color.FromArgb(0x40, 0x38, 0xBD, 0xF8))
-                        : new SolidColorBrush(Color.FromArgb(0x30, 0x1E, 0x27, 0x38)),
+                        ? Palette.Sky400A40
+                        : Palette.ChipBg,
                     BorderBrush = isActive
-                        ? new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8))
-                        : new SolidColorBrush(Color.FromRgb(0x29, 0x34, 0x48)),
+                        ? Palette.Sky400
+                        : Palette.ChipBorder,
                     BorderThickness = new Thickness(isActive ? 1.5 : 1)
                 };
 
@@ -613,8 +641,8 @@ namespace KeyTrigger
                     FontWeight = isActive ? FontWeights.Bold : FontWeights.SemiBold,
                     FontSize = 11,
                     Foreground = isActive
-                        ? new SolidColorBrush(Color.FromRgb(255, 255, 255))
-                        : new SolidColorBrush(Color.FromRgb(203, 213, 225)),
+                        ? Brushes.White
+                        : Palette.Slate300,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 8, 0)
                 };
@@ -630,8 +658,8 @@ namespace KeyTrigger
                     CornerRadius = new CornerRadius(4),
                     Padding = new Thickness(5, 1, 5, 1),
                     Background = isActive
-                        ? new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8))
-                        : new SolidColorBrush(Color.FromRgb(0x29, 0x34, 0x48)),
+                        ? Palette.Sky400
+                        : Palette.ChipBorder,
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, (_settings.Profiles.Count > 1 ? 6 : 0), 0)
                 };
@@ -642,8 +670,8 @@ namespace KeyTrigger
                     FontSize = 10,
                     FontWeight = FontWeights.Bold,
                     Foreground = isActive
-                        ? new SolidColorBrush(Color.FromRgb(0x0F, 0x17, 0x2A))
-                        : new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8))
+                        ? Palette.Slate900
+                        : Palette.Slate400
                 };
                 hkBadge.Child = hkTextBlock;
                 stack.Children.Add(hkBadge);
@@ -661,7 +689,7 @@ namespace KeyTrigger
                         Content = new System.Windows.Shapes.Path
                         {
                             Data = (Geometry)FindResource("IconClose"),
-                            Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                            Fill = Palette.Slate400,
                             Width = 8,
                             Height = 8,
                             Stretch = Stretch.Uniform
@@ -695,7 +723,6 @@ namespace KeyTrigger
         private void UpdateActiveProfileControls()
         {
             var active = _settings.GetActiveProfile();
-            TxtActiveProfileName.Text = active.Name;
 
             string hkLabel = (active.HotkeyVkCode != 0) ? active.HotkeyName : "None";
             TxtProfileHotkeyDisplay.Text = $"[ {hkLabel} ] (Change)";
@@ -706,28 +733,13 @@ namespace KeyTrigger
         {
             Dispatcher.InvokeAsync(() =>
             {
-                // Reload sliders and readouts
+                // Reloads sliders and readouts, the profile chips, and the visible page's curve or remap list
                 LoadSettingsIntoControls();
 
-                // Re-render curves & remaps
-                DrawCurveEditor();
-                DrawBrakeCurveEditor();
-                DrawSteerCurveEditor();
-                if (_currentPage == "Remap")
-                {
-                    RenderRemapList();
-                }
-
                 // Show Toast Notification
-                TxtToastProfileName.Text = profile.Name;
                 string hkTag = (profile.HotkeyVkCode != 0) ? $" • Hotkey: [{profile.HotkeyName}]" : "";
-                TxtToastDetails.Text = $"Throttle: {profile.CurveType} ({profile.AttackTimeSeconds:F2}s) • Brake: {profile.BrakeCurveType} • Steer: {profile.SteerCurveType}{hkTag}";
+                ShowToast(profile.Name, $"Throttle: {profile.CurveType} ({profile.AttackTimeSeconds:F2}s) • Brake: {profile.BrakeCurveType} • Steer: {profile.SteerCurveType}{hkTag}");
 
-                ProfileToastBanner.Visibility = Visibility.Visible;
-                _toastTimer?.Stop();
-                _toastTimer?.Start();
-
-                RenderProfileChips();
                 RenderProfileCards();
             });
         }
@@ -735,7 +747,7 @@ namespace KeyTrigger
         private void BtnCloseToast_Click(object sender, RoutedEventArgs e)
         {
             ProfileToastBanner.Visibility = Visibility.Collapsed;
-            _toastTimer?.Stop();
+            _toastTimer.Stop();
         }
 
         private void BtnAddProfile_Click(object sender, RoutedEventArgs e)
@@ -768,22 +780,7 @@ namespace KeyTrigger
             }
             else
             {
-                _settings.Save();
-                RenderProfileChips();
-                RenderProfileCards();
-            }
-        }
-
-        private void TxtActiveProfileName_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (_isUpdatingUiFromSettings) return;
-
-            var active = _settings.GetActiveProfile();
-            string newName = TxtActiveProfileName.Text.Trim();
-            if (!string.IsNullOrEmpty(newName) && active.Name != newName)
-            {
-                active.Name = newName;
-                _settings.Save();
+                SaveNow();
                 RenderProfileChips();
                 RenderProfileCards();
             }
@@ -791,15 +788,9 @@ namespace KeyTrigger
 
         private void BtnBindProfileHotkey_Click(object sender, RoutedEventArgs e)
         {
-            if (_isCapturingProfileHotkey) return;
+            if (!BeginCapture(CaptureTarget.ProfileHotkey)) return;
 
-            _isCapturingProfileHotkey = true;
-            _isCapturingKey = false;
-            _isCapturingBrakeKey = false;
-            _isCapturingSteerLeftKey = false;
-            _isCapturingSteerRightKey = false;
             TxtProfileHotkeyDisplay.Text = "[ PRESS ANY KEY... ]";
-            _engine.KeyboardHook.IsKeyCaptureActive = true;
         }
 
         private void BtnClearProfileHotkey_Click(object sender, RoutedEventArgs e)
@@ -807,7 +798,7 @@ namespace KeyTrigger
             var active = _settings.GetActiveProfile();
             active.HotkeyVkCode = 0;
             active.HotkeyName = "None";
-            _settings.Save();
+            SaveNow();
             UpdateActiveProfileControls();
             RenderProfileChips();
             RenderProfileCards();
@@ -867,11 +858,17 @@ namespace KeyTrigger
             if (SliderMaxSteer != null) _settings.MaxSteer = Math.Round(SliderMaxSteer.Value) / 100.0;
         }
 
+        // Accepts "0.25", "0.25s", "0.25 sec". The unit is stripped longest-first: removing every "s" first
+        // turned "1.5sec" into "1.5ec", which then failed to parse.
         private static bool TryParseTiming(string text, out double val)
         {
             val = 0;
             if (string.IsNullOrWhiteSpace(text)) return false;
-            string clean = text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
+            string clean = text.Trim().ToLowerInvariant();
+            if (clean.EndsWith("secs")) clean = clean.Substring(0, clean.Length - 4);
+            else if (clean.EndsWith("sec")) clean = clean.Substring(0, clean.Length - 3);
+            else if (clean.EndsWith("s")) clean = clean.Substring(0, clean.Length - 1);
+            clean = clean.Trim();
             return double.TryParse(clean, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out val) ||
                    double.TryParse(clean, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out val);
         }
@@ -882,7 +879,7 @@ namespace KeyTrigger
 
             CommitAllInputsToSettings();
             _settings.SyncToActiveProfile();
-            _settings.Save();
+            RequestSave();
             RenderProfileCards();
         }
 
@@ -918,36 +915,36 @@ namespace KeyTrigger
             bool th = _settings.EnableThrottle;
             if (BtnToggleThrottleAxis != null)
             {
-                BtnToggleThrottleAxis.Background = th ? new SolidColorBrush(Color.FromArgb(0x35, 0xFF, 0xFF, 0xFF)) : new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF));
-                BtnToggleThrottleAxis.BorderBrush = th ? new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)) : new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
+                BtnToggleThrottleAxis.Background = th ? Palette.WhiteA35 : Palette.WhiteA10;
+                BtnToggleThrottleAxis.BorderBrush = th ? Palette.WhiteA70 : Palette.WhiteA20;
             }
-            if (DotThrottleAxis != null) DotThrottleAxis.Fill = th ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+            if (DotThrottleAxis != null) DotThrottleAxis.Fill = th ? Brushes.White : Palette.WhiteA50;
             if (TxtThrottleAxisStatus != null) TxtThrottleAxisStatus.Text = th ? "RAMP: SMOOTH (ANALOG)" : "RAMP: DIRECT (DIGITAL 100%)";
-            if (DotQuickThrottle != null) DotQuickThrottle.Fill = th ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+            if (DotQuickThrottle != null) DotQuickThrottle.Fill = th ? Brushes.White : Palette.WhiteA50;
             if (TxtQuickThrottle != null) TxtQuickThrottle.Text = th ? "Throttle: Smooth" : "Throttle: Digital";
 
             // Brake
             bool br = _settings.EnableBrake;
             if (BtnToggleBrakeAxis != null)
             {
-                BtnToggleBrakeAxis.Background = br ? new SolidColorBrush(Color.FromArgb(0x35, 0xFF, 0xFF, 0xFF)) : new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF));
-                BtnToggleBrakeAxis.BorderBrush = br ? new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)) : new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
+                BtnToggleBrakeAxis.Background = br ? Palette.WhiteA35 : Palette.WhiteA10;
+                BtnToggleBrakeAxis.BorderBrush = br ? Palette.WhiteA70 : Palette.WhiteA20;
             }
-            if (DotBrakeAxis != null) DotBrakeAxis.Fill = br ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+            if (DotBrakeAxis != null) DotBrakeAxis.Fill = br ? Brushes.White : Palette.WhiteA50;
             if (TxtBrakeAxisStatus != null) TxtBrakeAxisStatus.Text = br ? "RAMP: SMOOTH (ANALOG)" : "RAMP: DIRECT (DIGITAL 100%)";
-            if (DotQuickBrake != null) DotQuickBrake.Fill = br ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+            if (DotQuickBrake != null) DotQuickBrake.Fill = br ? Brushes.White : Palette.WhiteA50;
             if (TxtQuickBrake != null) TxtQuickBrake.Text = br ? "Braking: Smooth" : "Braking: Digital";
 
             // Steering
             bool st = _settings.EnableSteering;
             if (BtnToggleSteeringAxis != null)
             {
-                BtnToggleSteeringAxis.Background = st ? new SolidColorBrush(Color.FromArgb(0x35, 0xFF, 0xFF, 0xFF)) : new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF));
-                BtnToggleSteeringAxis.BorderBrush = st ? new SolidColorBrush(Color.FromArgb(0x70, 0xFF, 0xFF, 0xFF)) : new SolidColorBrush(Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF));
+                BtnToggleSteeringAxis.Background = st ? Palette.WhiteA35 : Palette.WhiteA10;
+                BtnToggleSteeringAxis.BorderBrush = st ? Palette.WhiteA70 : Palette.WhiteA20;
             }
-            if (DotSteeringAxis != null) DotSteeringAxis.Fill = st ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+            if (DotSteeringAxis != null) DotSteeringAxis.Fill = st ? Brushes.White : Palette.WhiteA50;
             if (TxtSteeringAxisStatus != null) TxtSteeringAxisStatus.Text = st ? "RAMP: SMOOTH (ANALOG)" : "RAMP: DIRECT (DIGITAL 100%)";
-            if (DotQuickSteering != null) DotQuickSteering.Fill = st ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+            if (DotQuickSteering != null) DotQuickSteering.Fill = st ? Brushes.White : Palette.WhiteA50;
             if (TxtQuickSteering != null) TxtQuickSteering.Text = st ? "Steering: Smooth" : "Steering: Digital";
         }
 
@@ -961,19 +958,19 @@ namespace KeyTrigger
             {
                 if (isActive)
                 {
-                    PillMasterToggle.Background = new SolidColorBrush(Color.FromArgb(0x25, 0x10, 0xB9, 0x81));
-                    PillMasterToggle.BorderBrush = new SolidColorBrush(Color.FromArgb(0x60, 0x10, 0xB9, 0x81));
-                    DotMasterStatus.Fill = new SolidColorBrush(Color.FromRgb(0x10, 0xB9, 0x81));
+                    PillMasterToggle.Background = Palette.EmeraldA25;
+                    PillMasterToggle.BorderBrush = Palette.EmeraldA60;
+                    DotMasterStatus.Fill = Palette.Emerald;
                     TxtMasterStatus.Text = "ACTIVE";
                     TxtMasterStatus.Foreground = Brushes.White;
                 }
                 else
                 {
-                    PillMasterToggle.Background = new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF));
-                    PillMasterToggle.BorderBrush = new SolidColorBrush(Color.FromArgb(0x25, 0xFF, 0xFF, 0xFF));
-                    DotMasterStatus.Fill = new SolidColorBrush(Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF));
+                    PillMasterToggle.Background = Palette.WhiteA10;
+                    PillMasterToggle.BorderBrush = Palette.WhiteA25;
+                    DotMasterStatus.Fill = Palette.WhiteA50;
                     TxtMasterStatus.Text = "DISABLED";
-                    TxtMasterStatus.Foreground = new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF));
+                    TxtMasterStatus.Foreground = Palette.WhiteA80;
                 }
             });
         }
@@ -985,32 +982,70 @@ namespace KeyTrigger
         private string _currentPage = "Home";
         private DispatcherTimer? _telemetryTimer;
 
+        // "0%".."100%", so the 30 Hz readout never formats a string
+        private static readonly string[] s_percentText = Enumerable.Range(0, 101).Select(i => $"{i}%").ToArray();
+
+        // Last value shown per bar (exact) and per readout (whole percent); -1 forces the first update
+        private double _shownThrottleBar = -1, _shownBrakeBar = -1, _shownSteerLeftBar = -1, _shownSteerRightBar = -1;
+        private int _shownThrottle = -1;
+        private int _shownBrake = -1;
+        private int _shownSteerLeft = -1;
+        private int _shownSteerRight = -1;
+
         private void InitTelemetryTimer()
         {
+            // Started and stopped by UpdateTelemetryTimer: it only runs while Home is shown and not minimized
             _telemetryTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };
-            _telemetryTimer.Tick += (s, e) =>
+            _telemetryTimer.Tick += (s, e) => UpdateTelemetry();
+        }
+
+        private void UpdateTelemetryTimer()
+        {
+            if (_telemetryTimer == null) return;
+
+            bool shouldRun = _currentPage == "Home" && WindowState != WindowState.Minimized;
+            if (shouldRun == _telemetryTimer.IsEnabled) return;
+
+            if (shouldRun)
             {
-                if (_isWindowMinimized || _currentPage != "Home") return;
+                UpdateTelemetry();
+                _telemetryTimer.Start();
+            }
+            else
+            {
+                _telemetryTimer.Stop();
+            }
+        }
 
-                double th = _engine.LastEvaluatedThrottle;
-                double br = _engine.LastEvaluatedBrake;
-                double st = _engine.LastEvaluatedSteer;
+        private void UpdateTelemetry()
+        {
+            double th = _engine.LastEvaluatedThrottle;
+            double br = _engine.LastEvaluatedBrake;
+            double st = _engine.LastEvaluatedSteer;
 
-                if (ProgLiveThrottle != null) ProgLiveThrottle.Value = th * 100.0;
-                if (TxtLiveThrottleVal != null) TxtLiveThrottleVal.Text = $"{(int)(th * 100.0)}%";
+            SetTelemetryBar(ProgLiveThrottle, TxtLiveThrottleVal, th * 100.0, ref _shownThrottleBar, ref _shownThrottle);
+            SetTelemetryBar(ProgLiveBrake, TxtLiveBrakeVal, br * 100.0, ref _shownBrakeBar, ref _shownBrake);
+            SetTelemetryBar(ProgLiveSteerLeft, TxtLiveSteerLeftVal, st < 0 ? -st * 100.0 : 0, ref _shownSteerLeftBar, ref _shownSteerLeft);
+            SetTelemetryBar(ProgLiveSteerRight, TxtLiveSteerRightVal, st > 0 ? st * 100.0 : 0, ref _shownSteerRightBar, ref _shownSteerRight);
+        }
 
-                if (ProgLiveBrake != null) ProgLiveBrake.Value = br * 100.0;
-                if (TxtLiveBrakeVal != null) TxtLiveBrakeVal.Text = $"{(int)(br * 100.0)}%";
+        // The bar shows the exact value, so even a sub-1% input is visible (the readout next to it is whole percent).
+        // Each control is only touched when its value changes, so an idle pad costs no layout or allocation.
+        private static void SetTelemetryBar(ProgressBar? bar, TextBlock? text, double value, ref double shownBar, ref int shownPercent)
+        {
+            value = Math.Clamp(value, 0.0, 100.0);
+            if (value != shownBar)
+            {
+                shownBar = value;
+                if (bar != null) bar.Value = value;
+            }
 
-                double stLeft = st < 0 ? (-st * 100.0) : 0;
-                if (ProgLiveSteerLeft != null) ProgLiveSteerLeft.Value = stLeft;
-                if (TxtLiveSteerLeftVal != null) TxtLiveSteerLeftVal.Text = $"{(int)stLeft}%";
-
-                double stRight = st > 0 ? (st * 100.0) : 0;
-                if (ProgLiveSteerRight != null) ProgLiveSteerRight.Value = stRight;
-                if (TxtLiveSteerRightVal != null) TxtLiveSteerRightVal.Text = $"{(int)stRight}%";
-            };
-            _telemetryTimer.Start();
+            int percent = (int)value;
+            if (percent != shownPercent)
+            {
+                shownPercent = percent;
+                if (text != null) text.Text = s_percentText[percent];
+            }
         }
 
         private void NavBtn_Click(object sender, RoutedEventArgs e)
@@ -1026,6 +1061,7 @@ namespace KeyTrigger
         private void NavigateToPage(string pageName)
         {
             _currentPage = pageName;
+            UpdateTelemetryTimer();
 
             if (PageHome != null) PageHome.Visibility = (pageName == "Home") ? Visibility.Visible : Visibility.Collapsed;
             if (PageThrottle != null) PageThrottle.Visibility = (pageName == "Throttle") ? Visibility.Visible : Visibility.Collapsed;
@@ -1079,15 +1115,15 @@ namespace KeyTrigger
             if (btn == null) return;
             if (isSelected)
             {
-                btn.Background = new SolidColorBrush(Color.FromRgb(0x19, 0x20, 0x2E));
-                btn.BorderBrush = new SolidColorBrush(Color.FromRgb(0x2E, 0x3A, 0x52));
+                btn.Background = Palette.NavSelectedBg;
+                btn.BorderBrush = Palette.NavSelectedBorder;
                 btn.Foreground = Brushes.White;
             }
             else
             {
                 btn.Background = Brushes.Transparent;
                 btn.BorderBrush = Brushes.Transparent;
-                btn.Foreground = (Brush)FindResource("TextSecondary");
+                btn.Foreground = TextSecondaryBrush;
             }
         }
 
@@ -1103,18 +1139,12 @@ namespace KeyTrigger
             {
                 if (isLaunched)
                 {
-                    TxtToastProfileName.Text = "Game Auto-Detected";
-                    TxtToastDetails.Text = $"{gameName} launched → Key Trigger ACTIVATED!";
+                    ShowToast("Game Auto-Detected", $"{gameName} launched → Key Trigger ACTIVATED!");
                 }
                 else
                 {
-                    TxtToastProfileName.Text = "Game Closed";
-                    TxtToastDetails.Text = $"Game exited → Key Trigger DEACTIVATED";
+                    ShowToast("Game Closed", "Game exited → Key Trigger DEACTIVATED");
                 }
-
-                ProfileToastBanner.Visibility = Visibility.Visible;
-                _toastTimer?.Stop();
-                _toastTimer?.Start();
 
                 if (_currentPage == "Games")
                 {
@@ -1126,7 +1156,7 @@ namespace KeyTrigger
         private void BtnToggleAutoActivation_Click(object sender, RoutedEventArgs e)
         {
             _settings.EnableAutoActivation = !_settings.EnableAutoActivation;
-            _settings.Save();
+            SaveNow();
             UpdateAutoActivationUi();
             RenderGamesList();
             _gameWatcher.CheckNow();
@@ -1135,7 +1165,7 @@ namespace KeyTrigger
         private void BtnTogglePauseWhenUnfocused_Click(object sender, RoutedEventArgs e)
         {
             _settings.PauseWhenUnfocused = !_settings.PauseWhenUnfocused;
-            _settings.Save();
+            SaveNow();
             UpdateAutoActivationUi();
             RenderGamesList();
             _gameWatcher.CheckNow();
@@ -1148,40 +1178,40 @@ namespace KeyTrigger
             bool enabled = _settings.EnableAutoActivation;
             BtnToggleAutoActivation.Content = enabled ? "ENABLED" : "DISABLED";
             BtnToggleAutoActivation.Foreground = enabled
-                ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                : new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E));
+                ? Palette.Green
+                : Palette.Gray;
 
             BadgeAutoActivationStatus.Background = enabled
-                ? new SolidColorBrush(Color.FromRgb(0x12, 0x2C, 0x20))
-                : new SolidColorBrush(Color.FromRgb(0x23, 0x29, 0x36));
+                ? Palette.GreenBadgeBg
+                : Palette.OffBadgeBg;
             BadgeAutoActivationStatus.BorderBrush = enabled
-                ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                : new SolidColorBrush(Color.FromRgb(0x4F, 0x58, 0x6E));
+                ? Palette.Green
+                : Palette.OffBadgeBorder;
 
             TxtAutoActivationBadge.Text = enabled ? "ACTIVE SCANNING" : "PAUSED";
             TxtAutoActivationBadge.Foreground = enabled
-                ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                : new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E));
+                ? Palette.Green
+                : Palette.Gray;
 
             if (BtnTogglePauseWhenUnfocused != null && BadgeFocusTrackingStatus != null && TxtFocusTrackingBadge != null)
             {
                 bool focusEnabled = _settings.PauseWhenUnfocused;
                 BtnTogglePauseWhenUnfocused.Content = focusEnabled ? "ENABLED" : "DISABLED";
                 BtnTogglePauseWhenUnfocused.Foreground = focusEnabled
-                    ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                    : new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E));
+                    ? Palette.Green
+                    : Palette.Gray;
 
                 BadgeFocusTrackingStatus.Background = focusEnabled
-                    ? new SolidColorBrush(Color.FromRgb(0x12, 0x2C, 0x20))
-                    : new SolidColorBrush(Color.FromRgb(0x23, 0x29, 0x36));
+                    ? Palette.GreenBadgeBg
+                    : Palette.OffBadgeBg;
                 BadgeFocusTrackingStatus.BorderBrush = focusEnabled
-                    ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                    : new SolidColorBrush(Color.FromRgb(0x4F, 0x58, 0x6E));
+                    ? Palette.Green
+                    : Palette.OffBadgeBorder;
 
                 TxtFocusTrackingBadge.Text = focusEnabled ? "ACTIVE ONLY WHEN FOCUSED" : "DISABLED (ALWAYS ACTIVE)";
                 TxtFocusTrackingBadge.Foreground = focusEnabled
-                    ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                    : new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E));
+                    ? Palette.Green
+                    : Palette.Gray;
             }
         }
 
@@ -1211,14 +1241,10 @@ namespace KeyTrigger
                             ExeFileName = fileName,
                             IsEnabled = true
                         });
-                        _settings.Save();
+                        SaveNow();
                         RenderGamesList();
 
-                        TxtToastProfileName.Text = "Game Added";
-                        TxtToastDetails.Text = $"Key Trigger will auto-activate whenever {fileName} is running.";
-                        ProfileToastBanner.Visibility = Visibility.Visible;
-                        _toastTimer?.Stop();
-                        _toastTimer?.Start();
+                        ShowToast("Game Added", $"Key Trigger will auto-activate whenever {fileName} is running.");
                     }
                     else
                     {
@@ -1241,8 +1267,8 @@ namespace KeyTrigger
             {
                 var emptyCard = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(0x16, 0x1B, 0x26)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x22, 0x29, 0x38)),
+                    Background = Palette.CardBg,
+                    BorderBrush = Palette.CardBorder,
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(24, 28, 24, 28),
@@ -1253,7 +1279,7 @@ namespace KeyTrigger
                 emptyStack.Children.Add(new System.Windows.Shapes.Path
                 {
                     Data = (Geometry)FindResource("IconGamepad"),
-                    Fill = new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)),
+                    Fill = Palette.Slate500,
                     Width = 32,
                     Height = 32,
                     Stretch = Stretch.Uniform,
@@ -1273,14 +1299,14 @@ namespace KeyTrigger
                 {
                     Text = "Select any game executable (.exe). When that game launches, Key Trigger activates automatically!",
                     FontSize = 12,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0x94, 0x9E)),
+                    Foreground = Palette.Gray,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 0, 0, 14)
                 });
 
                 var addBtn = new Button
                 {
-                    Style = (Style)FindResource("CardActionBtn"),
+                    Style = CardActionBtnStyle,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Padding = new Thickness(18, 8, 18, 8)
                 };
@@ -1305,16 +1331,19 @@ namespace KeyTrigger
                 return;
             }
 
+            // One process snapshot for the whole list
+            _gameWatcher.RefreshRunningProcesses();
+
             foreach (var game in _settings.AutoActivateGames)
             {
                 bool isRunning = _gameWatcher.IsGameRunning(game);
 
                 var card = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromRgb(0x16, 0x1B, 0x26)),
+                    Background = Palette.CardBg,
                     BorderBrush = isRunning
-                        ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                        : new SolidColorBrush(Color.FromRgb(0x22, 0x29, 0x38)),
+                        ? Palette.Green
+                        : Palette.CardBorder,
                     BorderThickness = new Thickness(isRunning ? 1.5 : 1),
                     CornerRadius = new CornerRadius(8),
                     Padding = new Thickness(18, 16, 18, 16),
@@ -1331,7 +1360,7 @@ namespace KeyTrigger
                 titleRow.Children.Add(new System.Windows.Shapes.Path
                 {
                     Data = (Geometry)FindResource("IconGamepad"),
-                    Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                    Fill = Palette.Slate400,
                     Width = 14,
                     Height = 14,
                     Stretch = Stretch.Uniform,
@@ -1353,11 +1382,11 @@ namespace KeyTrigger
                     var liveBadge = new Border
                     {
                         Background = isFocused
-                            ? new SolidColorBrush(Color.FromRgb(0x12, 0x2C, 0x20))
-                            : new SolidColorBrush(Color.FromRgb(0x2A, 0x24, 0x14)),
+                            ? Palette.GreenBadgeBg
+                            : Palette.AmberBadgeBg,
                         BorderBrush = isFocused
-                            ? new SolidColorBrush(Color.FromRgb(0x00, 0xE6, 0x76))
-                            : new SolidColorBrush(Color.FromRgb(0xF5, 0x9E, 0x0B)),
+                            ? Palette.Green
+                            : Palette.Amber500,
                         BorderThickness = new Thickness(1),
                         CornerRadius = new CornerRadius(4),
                         Padding = new Thickness(6, 2, 6, 2),
@@ -1368,16 +1397,16 @@ namespace KeyTrigger
                     string statusText = isFocused
                         ? "RUNNING (FOCUSED - ACTIVE)"
                         : (_settings.PauseWhenUnfocused ? "RUNNING (UNFOCUSED - PAUSED)" : "RUNNING (ACTIVE)");
-                    Color textColor = isFocused
-                        ? Color.FromRgb(0x10, 0xB9, 0x81)
-                        : (_settings.PauseWhenUnfocused ? Color.FromRgb(0xF5, 0x9E, 0x0B) : Color.FromRgb(0x10, 0xB9, 0x81));
+                    Brush textBrush = isFocused
+                        ? Palette.Emerald
+                        : (_settings.PauseWhenUnfocused ? Palette.Amber500 : Palette.Emerald);
 
                     liveBadge.Child = new TextBlock
                     {
                         Text = statusText,
                         FontSize = 9,
                         FontWeight = FontWeights.Bold,
-                        Foreground = new SolidColorBrush(textColor)
+                        Foreground = textBrush
                     };
                     titleRow.Children.Add(liveBadge);
                 }
@@ -1385,29 +1414,29 @@ namespace KeyTrigger
                 {
                     var idleBadge = new Border
                     {
-                        Background = new SolidColorBrush(Color.FromRgb(0x1C, 0x22, 0x30)),
-                        BorderBrush = new SolidColorBrush(Color.FromRgb(0x35, 0x40, 0x57)),
+                        Background = Palette.IdleBadgeBg,
+                        BorderBrush = Palette.IdleBadgeBorder,
                         BorderThickness = new Thickness(1),
                         CornerRadius = new CornerRadius(4),
                         Padding = new Thickness(6, 2, 6, 2),
                         Margin = new Thickness(10, 0, 0, 0),
                         VerticalAlignment = VerticalAlignment.Center
                     };
-                    idleBadge.Child = new TextBlock { Text = "STANDBY", FontSize = 9, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)) };
+                    idleBadge.Child = new TextBlock { Text = "STANDBY", FontSize = 9, FontWeight = FontWeights.Bold, Foreground = Palette.Slate400 };
                     titleRow.Children.Add(idleBadge);
                 }
 
                 var fileBadge = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromArgb(0x30, 0x81, 0x8C, 0xF8)),
-                    BorderBrush = new SolidColorBrush(Color.FromRgb(0x81, 0x8C, 0xF8)),
+                    Background = Palette.Indigo400A30,
+                    BorderBrush = Palette.Indigo400,
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(4),
                     Padding = new Thickness(6, 2, 6, 2),
                     Margin = new Thickness(6, 0, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                fileBadge.Child = new TextBlock { Text = game.ExeFileName, FontSize = 9, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromRgb(0x81, 0x8C, 0xF8)) };
+                fileBadge.Child = new TextBlock { Text = game.ExeFileName, FontSize = 9, FontWeight = FontWeights.Bold, Foreground = Palette.Indigo400 };
                 titleRow.Children.Add(fileBadge);
 
                 infoStack.Children.Add(titleRow);
@@ -1416,7 +1445,7 @@ namespace KeyTrigger
                 {
                     Text = string.IsNullOrEmpty(game.ExePath) ? game.ExeFileName : game.ExePath,
                     FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80)),
+                    Foreground = Palette.Gray500,
                     Margin = new Thickness(0, 0, 0, 2),
                     TextTrimming = TextTrimming.CharacterEllipsis,
                     ToolTip = game.ExePath
@@ -1431,18 +1460,18 @@ namespace KeyTrigger
                 var toggleBtn = new Button
                 {
                     Content = game.IsEnabled ? "Monitoring" : "Disabled",
-                    Style = (Style)FindResource("CardActionBtn"),
+                    Style = CardActionBtnStyle,
                     Padding = new Thickness(12, 6, 12, 6),
                     Foreground = game.IsEnabled
-                        ? new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8))
-                        : new SolidColorBrush(Color.FromRgb(0x64, 0x74, 0x8B)),
+                        ? Palette.Sky400
+                        : Palette.Slate500,
                     Cursor = Cursors.Hand
                 };
                 var g = game;
                 toggleBtn.Click += (s, e) =>
                 {
                     g.IsEnabled = !g.IsEnabled;
-                    _settings.Save();
+                    SaveNow();
                     RenderGamesList();
                 };
                 btnStack.Children.Add(toggleBtn);
@@ -1450,14 +1479,14 @@ namespace KeyTrigger
                 var delBtn = new Button
                 {
                     ToolTip = "Remove Game",
-                    Style = (Style)FindResource("CardActionBtn"),
+                    Style = CardActionBtnStyle,
                     Padding = new Thickness(10, 6, 10, 6),
                     Margin = new Thickness(8, 0, 0, 0),
                     Cursor = Cursors.Hand,
                     Content = new System.Windows.Shapes.Path
                     {
                         Data = (Geometry)FindResource("IconClose"),
-                        Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                        Fill = Palette.Slate400,
                         Width = 9,
                         Height = 9,
                         Stretch = Stretch.Uniform
@@ -1466,7 +1495,7 @@ namespace KeyTrigger
                 delBtn.Click += (s, e) =>
                 {
                     _settings.AutoActivateGames.Remove(g);
-                    _settings.Save();
+                    SaveNow();
                     RenderGamesList();
                 };
                 btnStack.Children.Add(delBtn);
@@ -1485,68 +1514,82 @@ namespace KeyTrigger
 
         private void BtnBindThrottleKey_Click(object sender, RoutedEventArgs e)
         {
-            if (_isCapturingKey || _isCapturingBrakeKey || _isCapturingSteerLeftKey || _isCapturingSteerRightKey) return;
+            if (!BeginCapture(CaptureTarget.Throttle)) return;
 
-            _isCapturingKey = true;
-            _isCapturingBrakeKey = false;
-            _isCapturingSteerLeftKey = false;
-            _isCapturingSteerRightKey = false;
-            _isCapturingProfileHotkey = false;
             TxtBoundKey.Text = "[ PRESS ANY KEY... ]";
-            TxtBoundKey.Foreground = new SolidColorBrush(Color.FromRgb(255, 179, 0));
-            _engine.KeyboardHook.IsKeyCaptureActive = true;
+            TxtBoundKey.Foreground = Palette.Amber;
         }
 
         private void BtnBindBrakeKey_Click(object sender, RoutedEventArgs e)
         {
-            if (_isCapturingKey || _isCapturingBrakeKey || _isCapturingSteerLeftKey || _isCapturingSteerRightKey) return;
+            if (!BeginCapture(CaptureTarget.Brake)) return;
 
-            _isCapturingBrakeKey = true;
-            _isCapturingKey = false;
-            _isCapturingSteerLeftKey = false;
-            _isCapturingSteerRightKey = false;
-            _isCapturingProfileHotkey = false;
             TxtBoundBrakeKey.Text = "[ PRESS ANY KEY... ]";
-            TxtBoundBrakeKey.Foreground = new SolidColorBrush(Color.FromRgb(255, 179, 0));
-            _engine.KeyboardHook.IsKeyCaptureActive = true;
-        }
-
-                private void BtnRebindSteerLeft_Click(object sender, RoutedEventArgs e)
-        {
-            BtnBindSteerLeftKey_Click(sender, e);
-        }
-
-        private void BtnRebindSteerRight_Click(object sender, RoutedEventArgs e)
-        {
-            BtnBindSteerRightKey_Click(sender, e);
+            TxtBoundBrakeKey.Foreground = Palette.Amber;
         }
 
         private void BtnBindSteerLeftKey_Click(object sender, RoutedEventArgs e)
         {
-            if (_isCapturingKey || _isCapturingBrakeKey || _isCapturingSteerLeftKey || _isCapturingSteerRightKey) return;
+            if (!BeginCapture(CaptureTarget.SteerLeft)) return;
 
-            _isCapturingSteerLeftKey = true;
-            _isCapturingKey = false;
-            _isCapturingBrakeKey = false;
-            _isCapturingSteerRightKey = false;
-            _isCapturingProfileHotkey = false;
             TxtBoundSteerLeftKey.Text = "[ PRESS ANY KEY... ]";
-            TxtBoundSteerLeftKey.Foreground = new SolidColorBrush(Color.FromRgb(255, 179, 0));
-            _engine.KeyboardHook.IsKeyCaptureActive = true;
+            TxtBoundSteerLeftKey.Foreground = Palette.Amber;
         }
 
         private void BtnBindSteerRightKey_Click(object sender, RoutedEventArgs e)
         {
-            if (_isCapturingKey || _isCapturingBrakeKey || _isCapturingSteerLeftKey || _isCapturingSteerRightKey) return;
+            if (!BeginCapture(CaptureTarget.SteerRight)) return;
 
-            _isCapturingSteerRightKey = true;
-            _isCapturingKey = false;
-            _isCapturingBrakeKey = false;
-            _isCapturingSteerLeftKey = false;
-            _isCapturingProfileHotkey = false;
             TxtBoundSteerRightKey.Text = "[ PRESS ANY KEY... ]";
-            TxtBoundSteerRightKey.Foreground = new SolidColorBrush(Color.FromRgb(255, 179, 0));
+            TxtBoundSteerRightKey.Foreground = Palette.Amber;
+        }
+
+        // Arms the keyboard hook to hand the next key press to OnKeyCaptured. Ignored while another capture
+        // is waiting for its key.
+        private bool BeginCapture(CaptureTarget target)
+        {
+            // Clicking the same bind button again while it waits does nothing. Clicking a different one takes over
+            // (the last click wins, as before), so a misclick never leaves a capture stuck: Escape is captured as a key.
+            if (_captureTarget == target) return false;
+            if (_captureTarget != CaptureTarget.None) CancelCapture(_captureTarget);
+
+            // Remember what the label showed, so a later take-over can put it back exactly
+            var label = CaptureLabel(target);
+            _labelBeforeCapture = label?.Text;
+            _labelBrushBeforeCapture = label?.Foreground;
+
+            _captureTarget = target;
             _engine.KeyboardHook.IsKeyCaptureActive = true;
+            return true;
+        }
+
+        private string? _labelBeforeCapture;
+        private Brush? _labelBrushBeforeCapture;
+
+        private TextBlock? CaptureLabel(CaptureTarget target) => target switch
+        {
+            CaptureTarget.ProfileHotkey => TxtProfileHotkeyDisplay,
+            CaptureTarget.Throttle => TxtBoundKey,
+            CaptureTarget.Brake => TxtBoundBrakeKey,
+            CaptureTarget.SteerLeft => TxtBoundSteerLeftKey,
+            CaptureTarget.SteerRight => TxtBoundSteerRightKey,
+            _ => null
+        };
+
+        // Puts back the display of a capture that another bind button just took over
+        private void CancelCapture(CaptureTarget target)
+        {
+            if (target == CaptureTarget.RemapButton)
+            {
+                _capturingRemapButtonId = null;
+                RenderRemapList();
+                return;
+            }
+
+            var label = CaptureLabel(target);
+            if (label == null) return;
+            if (_labelBeforeCapture != null) label.Text = _labelBeforeCapture;
+            if (_labelBrushBeforeCapture != null) label.Foreground = _labelBrushBeforeCapture;
         }
 
         private void OnKeyCaptured(int vkCode)
@@ -1554,20 +1597,21 @@ namespace KeyTrigger
             Dispatcher.InvokeAsync(() =>
             {
                 string keyName = KeyNameHelper.GetKeyName(vkCode);
+                var target = _captureTarget;
+                _captureTarget = CaptureTarget.None;
 
-                if (_isCapturingProfileHotkey)
+                if (target == CaptureTarget.ProfileHotkey)
                 {
-                    _isCapturingProfileHotkey = false;
                     var active = _settings.GetActiveProfile();
                     active.HotkeyVkCode = vkCode;
                     active.HotkeyName = keyName;
-                    _settings.Save();
+                    SaveNow();
 
                     UpdateActiveProfileControls();
                     RenderProfileChips();
                     RenderProfileCards();
                 }
-                else if (!string.IsNullOrEmpty(_capturingRemapButtonId))
+                else if (target == CaptureTarget.RemapButton && !string.IsNullOrEmpty(_capturingRemapButtonId))
                 {
                     string btnId = _capturingRemapButtonId;
                     _capturingRemapButtonId = null;
@@ -1578,63 +1622,54 @@ namespace KeyTrigger
                         mapping.VkCode = vkCode;
                         mapping.KeyName = keyName;
                         _settings.SyncToActiveProfile();
-                        _settings.Save();
-                        _engine.UpdateKeyBindings();
+                        SaveNow();
                     }
 
                     RenderRemapList();
                 }
-                else if (_isCapturingKey)
+                else if (target == CaptureTarget.Throttle)
                 {
-                    _isCapturingKey = false;
                     _settings.ThrottleVkCode = vkCode;
                     _settings.ThrottleKeyName = keyName;
                     _settings.SyncToActiveProfile();
-                    _settings.Save();
+                    SaveNow();
 
-                    _engine.UpdateKeyBindings();
 
                     TxtBoundKey.Text = $"[ {keyName} ]";
-                    TxtBoundKey.Foreground = new SolidColorBrush(Color.FromRgb(0, 229, 255));
+                    TxtBoundKey.Foreground = Palette.Cyan;
                 }
-                else if (_isCapturingBrakeKey)
+                else if (target == CaptureTarget.Brake)
                 {
-                    _isCapturingBrakeKey = false;
                     _settings.BrakeVkCode = vkCode;
                     _settings.BrakeKeyName = keyName;
                     _settings.SyncToActiveProfile();
-                    _settings.Save();
+                    SaveNow();
 
-                    _engine.UpdateKeyBindings();
 
                     TxtBoundBrakeKey.Text = $"[ {keyName} ]";
-                    TxtBoundBrakeKey.Foreground = new SolidColorBrush(Color.FromRgb(255, 82, 82));
+                    TxtBoundBrakeKey.Foreground = Palette.Coral;
                 }
-                else if (_isCapturingSteerLeftKey)
+                else if (target == CaptureTarget.SteerLeft)
                 {
-                    _isCapturingSteerLeftKey = false;
                     _settings.SteerLeftVkCode = vkCode;
                     _settings.SteerLeftKeyName = keyName;
                     _settings.SyncToActiveProfile();
-                    _settings.Save();
+                    SaveNow();
 
-                    _engine.UpdateKeyBindings();
 
                     TxtBoundSteerLeftKey.Text = $"[ {keyName} ]";
-                    TxtBoundSteerLeftKey.Foreground = new SolidColorBrush(Color.FromRgb(68, 138, 255));
+                    TxtBoundSteerLeftKey.Foreground = Palette.Blue;
                 }
-                else if (_isCapturingSteerRightKey)
+                else if (target == CaptureTarget.SteerRight)
                 {
-                    _isCapturingSteerRightKey = false;
                     _settings.SteerRightVkCode = vkCode;
                     _settings.SteerRightKeyName = keyName;
                     _settings.SyncToActiveProfile();
-                    _settings.Save();
+                    SaveNow();
 
-                    _engine.UpdateKeyBindings();
 
                     TxtBoundSteerRightKey.Text = $"[ {keyName} ]";
-                    TxtBoundSteerRightKey.Foreground = new SolidColorBrush(Color.FromRgb(179, 136, 255));
+                    TxtBoundSteerRightKey.Foreground = Palette.Purple;
                 }
             });
         }
@@ -1708,8 +1743,8 @@ namespace KeyTrigger
                     // Button Badge
                     var badgeBorder = new Border
                     {
-                        Background = new SolidColorBrush(Color.FromArgb(0x25, 0xFF, 0xFF, 0xFF)),
-                        BorderBrush = new SolidColorBrush(Color.FromArgb(0x45, 0xFF, 0xFF, 0xFF)),
+                        Background = Palette.WhiteA25,
+                        BorderBrush = Palette.WhiteA45,
                         BorderThickness = new Thickness(1),
                         CornerRadius = new CornerRadius(6),
                         Height = 28,
@@ -1755,23 +1790,31 @@ namespace KeyTrigger
 
                     var bindBtn = new Button
                     {
-                        Style = (Style)FindResource("CardActionBtn"),
+                        Style = CardActionBtnStyle,
                         MinWidth = 120,
                         Height = 32,
                         Cursor = Cursors.Hand,
                         Content = isCapturingThis ? "[ PRESS KEY... ]" : $"[ {mapping.KeyName} ]",
                         Foreground = isCapturingThis
-                            ? new SolidColorBrush(Color.FromRgb(255, 179, 0))
-                            : (mapping.VkCode != 0 ? Brushes.White : new SolidColorBrush(Color.FromArgb(0x80, 0xFF, 0xFF, 0xFF)))
+                            ? Palette.Amber
+                            : (mapping.VkCode != 0 ? Brushes.White : Palette.WhiteA80)
                     };
 
                     var currentMapping = mapping;
                     bindBtn.Click += (s, e) =>
                     {
-                        if (_isCapturingKey || _isCapturingBrakeKey || _isCapturingSteerLeftKey || _isCapturingSteerRightKey || _isCapturingProfileHotkey) return;
+                        // A misclicked row would otherwise stay waiting with no way out (Escape is captured as a
+                        // key), so another remap row takes over the pending capture. The hook is already armed.
+                        if (_captureTarget == CaptureTarget.RemapButton)
+                        {
+                            _capturingRemapButtonId = currentMapping.ButtonId;
+                            RenderRemapList();
+                            return;
+                        }
+
+                        if (!BeginCapture(CaptureTarget.RemapButton)) return;
 
                         _capturingRemapButtonId = currentMapping.ButtonId;
-                        _engine.KeyboardHook.IsKeyCaptureActive = true;
                         RenderRemapList();
                     };
                     actionsStack.Children.Add(bindBtn);
@@ -1781,7 +1824,7 @@ namespace KeyTrigger
                     {
                         var clearBtn = new Button
                         {
-                            Style = (Style)FindResource("CardActionBtn"),
+                            Style = CardActionBtnStyle,
                             Padding = new Thickness(10, 6, 10, 6),
                             Margin = new Thickness(6, 0, 0, 0),
                             Height = 32,
@@ -1790,7 +1833,7 @@ namespace KeyTrigger
                             Content = new System.Windows.Shapes.Path
                             {
                                 Data = (Geometry)FindResource("IconClose"),
-                                Fill = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8)),
+                                Fill = Palette.Slate400,
                                 Width = 9,
                                 Height = 9,
                                 Stretch = Stretch.Uniform
@@ -1801,8 +1844,7 @@ namespace KeyTrigger
                             currentMapping.VkCode = 0;
                             currentMapping.KeyName = "None";
                             _settings.SyncToActiveProfile();
-                            _settings.Save();
-                            _engine.UpdateKeyBindings();
+                            SaveNow();
                             RenderRemapList();
                         };
                         actionsStack.Children.Add(clearBtn);
@@ -1823,15 +1865,10 @@ namespace KeyTrigger
         {
             _settings.ButtonMappings = AppSettings.GetDefaultButtonMappings();
             _settings.SyncToActiveProfile();
-            _settings.Save();
-            _engine.UpdateKeyBindings();
+            SaveNow();
             RenderRemapList();
 
-            TxtToastProfileName.Text = "Defaults Restored";
-            TxtToastDetails.Text = "Controller button mappings reset to standard racing configuration.";
-            ProfileToastBanner.Visibility = Visibility.Visible;
-            _toastTimer?.Stop();
-            _toastTimer?.Start();
+            ShowToast("Defaults Restored", "Controller button mappings reset to standard racing configuration.");
         }
 
         private void BtnClearAllRemap_Click(object sender, RoutedEventArgs e)
@@ -1842,15 +1879,10 @@ namespace KeyTrigger
                 m.KeyName = "None";
             }
             _settings.SyncToActiveProfile();
-            _settings.Save();
-            _engine.UpdateKeyBindings();
+            SaveNow();
             RenderRemapList();
 
-            TxtToastProfileName.Text = "Mappings Cleared";
-            TxtToastDetails.Text = "All controller button keybindings unmapped.";
-            ProfileToastBanner.Visibility = Visibility.Visible;
-            _toastTimer?.Stop();
-            _toastTimer?.Start();
+            ShowToast("Mappings Cleared", "All controller button keybindings unmapped.");
         }
 
         #endregion
@@ -1861,19 +1893,6 @@ namespace KeyTrigger
         {
             try
             {
-                string localInstaller = @"C:\Users\spider\Desktop\ViGEmBusSetup.exe";
-                if (System.IO.File.Exists(localInstaller))
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = localInstaller,
-                        UseShellExecute = true,
-                        Verb = "runas"
-                    };
-                    Process.Start(psi);
-                    return;
-                }
-
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "https://github.com/nefarius/ViGEmBus/releases/latest",
@@ -1882,18 +1901,7 @@ namespace KeyTrigger
             }
             catch (Exception ex)
             {
-                try
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "https://github.com/nefarius/ViGEmBus/releases/latest",
-                        UseShellExecute = true
-                    });
-                }
-                catch
-                {
-                    MessageBox.Show($"Could not run installer: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                MessageBox.Show($"Could not run installer: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1927,9 +1935,7 @@ namespace KeyTrigger
 
         private void TxtAttackInput_LostFocus(object sender, RoutedEventArgs e)
         {
-            string text = TxtAttackInput.Text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
-            if (double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) ||
-                double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out sec))
+            if (TryParseTiming(TxtAttackInput.Text, out double sec))
             {
                 SetAttackTime(sec);
             }
@@ -1976,9 +1982,7 @@ namespace KeyTrigger
 
         private void TxtReleaseInput_LostFocus(object sender, RoutedEventArgs e)
         {
-            string text = TxtReleaseInput.Text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
-            if (double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) ||
-                double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out sec))
+            if (TryParseTiming(TxtReleaseInput.Text, out double sec))
             {
                 SetReleaseTime(sec);
             }
@@ -2025,9 +2029,7 @@ namespace KeyTrigger
 
         private void TxtBrakeAttackInput_LostFocus(object sender, RoutedEventArgs e)
         {
-            string text = TxtBrakeAttackInput.Text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
-            if (double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) ||
-                double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out sec))
+            if (TryParseTiming(TxtBrakeAttackInput.Text, out double sec))
             {
                 SetBrakeAttackTime(sec);
             }
@@ -2074,9 +2076,7 @@ namespace KeyTrigger
 
         private void TxtBrakeReleaseInput_LostFocus(object sender, RoutedEventArgs e)
         {
-            string text = TxtBrakeReleaseInput.Text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
-            if (double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) ||
-                double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out sec))
+            if (TryParseTiming(TxtBrakeReleaseInput.Text, out double sec))
             {
                 SetBrakeReleaseTime(sec);
             }
@@ -2124,9 +2124,7 @@ namespace KeyTrigger
         private void TxtSteerAttackInput_LostFocus(object sender, RoutedEventArgs e)
         {
             if (TxtSteerAttackInput == null) return;
-            string text = TxtSteerAttackInput.Text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
-            if (double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) ||
-                double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out sec))
+            if (TryParseTiming(TxtSteerAttackInput.Text, out double sec))
             {
                 SetSteerAttackTime(sec);
             }
@@ -2174,9 +2172,7 @@ namespace KeyTrigger
         private void TxtSteerReleaseInput_LostFocus(object sender, RoutedEventArgs e)
         {
             if (TxtSteerReleaseInput == null) return;
-            string text = TxtSteerReleaseInput.Text.Trim().ToLower().Replace("s", "").Replace("sec", "").Trim();
-            if (double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sec) ||
-                double.TryParse(text, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.CurrentCulture, out sec))
+            if (TryParseTiming(TxtSteerReleaseInput.Text, out double sec))
             {
                 SetSteerReleaseTime(sec);
             }
@@ -2204,7 +2200,6 @@ namespace KeyTrigger
             if (CmbCurveType.SelectedItem is ResponseCurveType curveType)
             {
                 _settings.CurveType = curveType;
-                TxtCurveDescription.Text = ResponseCurves.GetDescription(curveType);
                 SyncActiveProfileFromSliders();
                 DrawCurveEditor();
             }
@@ -2237,7 +2232,6 @@ namespace KeyTrigger
             if (CmbBrakeCurveType.SelectedItem is ResponseCurveType curveType)
             {
                 _settings.BrakeCurveType = curveType;
-                TxtBrakeCurveDescription.Text = ResponseCurves.GetDescription(curveType);
                 SyncActiveProfileFromSliders();
                 DrawBrakeCurveEditor();
             }
@@ -2272,7 +2266,6 @@ namespace KeyTrigger
             if (CmbSteerCurveType != null && CmbSteerCurveType.SelectedItem is ResponseCurveType curveType)
             {
                 _settings.SteerCurveType = curveType;
-                if (TxtSteerCurveDescription != null) TxtSteerCurveDescription.Text = ResponseCurves.GetDescription(curveType);
                 SyncActiveProfileFromSliders();
                 DrawSteerCurveEditor();
             }
@@ -2333,8 +2326,8 @@ namespace KeyTrigger
                 {
                     X1 = 0, Y1 = height * (1.0 - ratio),
                     X2 = width, Y2 = height * (1.0 - ratio),
-                    Stroke = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
-                    StrokeDashArray = new DoubleCollection { 3, 3 }
+                    Stroke = Palette.WhiteA1C,
+                    StrokeDashArray = Palette.Dash3
                 };
                 CurveEditorCanvas.Children.Add(hLine);
 
@@ -2342,8 +2335,8 @@ namespace KeyTrigger
                 {
                     X1 = width * ratio, Y1 = 0,
                     X2 = width * ratio, Y2 = height,
-                    Stroke = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
-                    StrokeDashArray = new DoubleCollection { 3, 3 }
+                    Stroke = Palette.WhiteA1C,
+                    StrokeDashArray = Palette.Dash3
                 };
                 CurveEditorCanvas.Children.Add(vLine);
             }
@@ -2378,8 +2371,8 @@ namespace KeyTrigger
             {
                 X1 = 0, Y1 = height,
                 X2 = p1X, Y2 = p1Y,
-                Stroke = new SolidColorBrush(Color.FromArgb(120, 0x38, 0xBD, 0xF8)),
-                StrokeDashArray = new DoubleCollection { 3, 3 },
+                Stroke = Palette.Sky400A78,
+                StrokeDashArray = Palette.Dash3,
                 StrokeThickness = 1.2
             };
             CurveEditorCanvas.Children.Add(tang1);
@@ -2388,8 +2381,8 @@ namespace KeyTrigger
             {
                 X1 = width, Y1 = 0,
                 X2 = p2X, Y2 = p2Y,
-                Stroke = new SolidColorBrush(Color.FromArgb(120, 0x81, 0x8C, 0xF8)),
-                StrokeDashArray = new DoubleCollection { 3, 3 },
+                Stroke = Palette.Indigo400A78,
+                StrokeDashArray = Palette.Dash3,
                 StrokeThickness = 1.2
             };
             CurveEditorCanvas.Children.Add(tang2);
@@ -2398,8 +2391,8 @@ namespace KeyTrigger
             var dot1 = new Ellipse
             {
                 Width = 14, Height = 14,
-                Fill = new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8)),
-                Stroke = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                Fill = Palette.Sky400,
+                Stroke = Brushes.White,
                 StrokeThickness = 2,
                 Cursor = Cursors.Hand
             };
@@ -2411,16 +2404,14 @@ namespace KeyTrigger
             var dot2 = new Ellipse
             {
                 Width = 14, Height = 14,
-                Fill = new SolidColorBrush(Color.FromRgb(0x81, 0x8C, 0xF8)),
-                Stroke = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                Fill = Palette.Indigo400,
+                Stroke = Brushes.White,
                 StrokeThickness = 2,
                 Cursor = Cursors.Hand
             };
             Canvas.SetLeft(dot2, p2X - 7);
             Canvas.SetTop(dot2, p2Y - 7);
             CurveEditorCanvas.Children.Add(dot2);
-
-            TxtCurveHandlesReadout.Text = $"P1 Launch: ({_settings.CustomP1X:F2}, {_settings.CustomP1Y:F2}) • P2 Top-End: ({_settings.CustomP2X:F2}, {_settings.CustomP2Y:F2})";
         }
 
         private void CurveEditorCanvas_MouseDown(object sender, MouseButtonEventArgs e)
@@ -2447,7 +2438,6 @@ namespace KeyTrigger
             {
                 _settings.CurveType = ResponseCurveType.Custom;
                 CmbCurveType.SelectedItem = ResponseCurveType.Custom;
-                TxtCurveDescription.Text = ResponseCurves.GetDescription(ResponseCurveType.Custom);
             }
 
             UpdateDraggedHandle(pos, width, height);
@@ -2481,7 +2471,7 @@ namespace KeyTrigger
             }
 
             _settings.SyncToActiveProfile();
-            _settings.Save();
+            RequestSave();
             DrawCurveEditor();
         }
 
@@ -2489,62 +2479,30 @@ namespace KeyTrigger
         {
             _draggingHandle = 0;
             CurveEditorCanvas.ReleaseMouseCapture();
+            FlushSave();
         }
 
-        private void BtnCurvePreset_Click(object sender, RoutedEventArgs e)
+        // Also covers a drag that ends without a MouseUp on the canvas (focus loss, Alt+Tab)
+        private void CurveEditorCanvas_LostMouseCapture(object sender, MouseEventArgs e)
         {
-            if (sender is Button btn && btn.Tag is string tag)
-            {
-                var parts = tag.Split(',');
-                if (parts.Length == 4 &&
-                    double.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out double p1x) &&
-                    double.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out double p1y) &&
-                    double.TryParse(parts[2], System.Globalization.CultureInfo.InvariantCulture, out double p2x) &&
-                    double.TryParse(parts[3], System.Globalization.CultureInfo.InvariantCulture, out double p2y))
-                {
-                    _settings.CustomP1X = p1x;
-                    _settings.CustomP1Y = p1y;
-                    _settings.CustomP2X = p2x;
-                    _settings.CustomP2Y = p2y;
-                    _settings.CurveType = ResponseCurveType.Custom;
-                    CmbCurveType.SelectedItem = ResponseCurveType.Custom;
-                    TxtCurveDescription.Text = ResponseCurves.GetDescription(ResponseCurveType.Custom);
-
-                    _settings.SyncToActiveProfile();
-                    _settings.Save();
-                    DrawCurveEditor();
-                }
-            }
+            FlushSave();
         }
 
         private void BtnUniversalSave_Click(object sender, RoutedEventArgs e)
         {
-            // Sync all UI inputs and sliders
+            // Sync all UI inputs, sliders, curves, timings, limits and keymaps into the active profile
+            // (this also refreshes the profile cards)
             SyncActiveProfileFromSliders();
 
-            // Sync all settings (curves, timings, limits, and all keymaps) into the active profile object
-            _settings.SyncToActiveProfile();
+            // Persist to settings.json now rather than after the save delay
+            SaveNow();
 
-            // Persist to settings.json
-            _settings.Save();
-
-            // Push updated bindings to the engine keyboard hook immediately
-            _engine.UpdateKeyBindings();
-
-            // Refresh UI chips & cards
             RenderProfileChips();
-            RenderProfileCards();
 
             // Toast feedback
             var active = _settings.GetActiveProfile();
-            TxtToastProfileName.Text = active.Name;
-            TxtToastDetails.Text = $"Saved — Throttle: {active.CurveType} • Brake: {active.BrakeCurveType} • Steer: {active.SteerCurveType}";
-            ProfileToastBanner.Visibility = Visibility.Visible;
-            _toastTimer?.Stop();
-            _toastTimer?.Start();
+            ShowToast(active.Name, $"Saved — Throttle: {active.CurveType} • Brake: {active.BrakeCurveType} • Steer: {active.SteerCurveType}");
         }
-
-        private void BtnSaveCurvePreset_Click(object sender, RoutedEventArgs e) => BtnUniversalSave_Click(sender, e);
 
         #endregion
 
@@ -2576,8 +2534,8 @@ namespace KeyTrigger
                 {
                     X1 = 0, Y1 = height * (1.0 - ratio),
                     X2 = width, Y2 = height * (1.0 - ratio),
-                    Stroke = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
-                    StrokeDashArray = new DoubleCollection { 3, 3 }
+                    Stroke = Palette.WhiteA1C,
+                    StrokeDashArray = Palette.Dash3
                 };
                 BrakeCurveEditorCanvas.Children.Add(hLine);
 
@@ -2585,8 +2543,8 @@ namespace KeyTrigger
                 {
                     X1 = width * ratio, Y1 = 0,
                     X2 = width * ratio, Y2 = height,
-                    Stroke = new SolidColorBrush(Color.FromArgb(28, 255, 255, 255)),
-                    StrokeDashArray = new DoubleCollection { 3, 3 }
+                    Stroke = Palette.WhiteA1C,
+                    StrokeDashArray = Palette.Dash3
                 };
                 BrakeCurveEditorCanvas.Children.Add(vLine);
             }
@@ -2594,7 +2552,7 @@ namespace KeyTrigger
             // Curve polyline (Red/Coral for Brake)
             var polyline = new Polyline
             {
-                Stroke = new SolidColorBrush(Color.FromRgb(255, 82, 82)),
+                Stroke = Palette.Coral,
                 StrokeThickness = 2.5
             };
 
@@ -2621,8 +2579,8 @@ namespace KeyTrigger
             {
                 X1 = 0, Y1 = height,
                 X2 = p1X, Y2 = p1Y,
-                Stroke = new SolidColorBrush(Color.FromArgb(120, 255, 82, 82)),
-                StrokeDashArray = new DoubleCollection { 3, 3 },
+                Stroke = Palette.CoralA78,
+                StrokeDashArray = Palette.Dash3,
                 StrokeThickness = 1.2
             };
             BrakeCurveEditorCanvas.Children.Add(tang1);
@@ -2631,8 +2589,8 @@ namespace KeyTrigger
             {
                 X1 = width, Y1 = 0,
                 X2 = p2X, Y2 = p2Y,
-                Stroke = new SolidColorBrush(Color.FromArgb(120, 255, 179, 0)),
-                StrokeDashArray = new DoubleCollection { 3, 3 },
+                Stroke = Palette.AmberA78,
+                StrokeDashArray = Palette.Dash3,
                 StrokeThickness = 1.2
             };
             BrakeCurveEditorCanvas.Children.Add(tang2);
@@ -2641,8 +2599,8 @@ namespace KeyTrigger
             var dot1 = new Ellipse
             {
                 Width = 14, Height = 14,
-                Fill = new SolidColorBrush(Color.FromRgb(255, 82, 82)),
-                Stroke = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                Fill = Palette.Coral,
+                Stroke = Brushes.White,
                 StrokeThickness = 2,
                 Cursor = Cursors.Hand
             };
@@ -2654,16 +2612,14 @@ namespace KeyTrigger
             var dot2 = new Ellipse
             {
                 Width = 14, Height = 14,
-                Fill = new SolidColorBrush(Color.FromRgb(255, 179, 0)),
-                Stroke = new SolidColorBrush(Color.FromRgb(255, 255, 255)),
+                Fill = Palette.Amber,
+                Stroke = Brushes.White,
                 StrokeThickness = 2,
                 Cursor = Cursors.Hand
             };
             Canvas.SetLeft(dot2, p2X - 7);
             Canvas.SetTop(dot2, p2Y - 7);
             BrakeCurveEditorCanvas.Children.Add(dot2);
-
-            TxtBrakeCurveHandlesReadout.Text = $"P1 Initial: ({_settings.BrakeCustomP1X:F2}, {_settings.BrakeCustomP1Y:F2}) • P2 Heavy: ({_settings.BrakeCustomP2X:F2}, {_settings.BrakeCustomP2Y:F2})";
         }
 
         private void BrakeCurveEditorCanvas_MouseDown(object sender, MouseButtonEventArgs e)
@@ -2690,7 +2646,6 @@ namespace KeyTrigger
             {
                 _settings.BrakeCurveType = ResponseCurveType.Custom;
                 CmbBrakeCurveType.SelectedItem = ResponseCurveType.Custom;
-                TxtBrakeCurveDescription.Text = ResponseCurves.GetDescription(ResponseCurveType.Custom);
             }
 
             UpdateDraggedBrakeHandle(pos, width, height);
@@ -2724,7 +2679,7 @@ namespace KeyTrigger
             }
 
             _settings.SyncToActiveProfile();
-            _settings.Save();
+            RequestSave();
             DrawBrakeCurveEditor();
         }
 
@@ -2732,35 +2687,13 @@ namespace KeyTrigger
         {
             _draggingBrakeHandle = 0;
             BrakeCurveEditorCanvas.ReleaseMouseCapture();
+            FlushSave();
         }
 
-        private void BtnBrakeCurvePreset_Click(object sender, RoutedEventArgs e)
+        private void BrakeCurveEditorCanvas_LostMouseCapture(object sender, MouseEventArgs e)
         {
-            if (sender is Button btn && btn.Tag is string tag)
-            {
-                var parts = tag.Split(',');
-                if (parts.Length == 4 &&
-                    double.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out double p1x) &&
-                    double.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out double p1y) &&
-                    double.TryParse(parts[2], System.Globalization.CultureInfo.InvariantCulture, out double p2x) &&
-                    double.TryParse(parts[3], System.Globalization.CultureInfo.InvariantCulture, out double p2y))
-                {
-                    _settings.BrakeCustomP1X = p1x;
-                    _settings.BrakeCustomP1Y = p1y;
-                    _settings.BrakeCustomP2X = p2x;
-                    _settings.BrakeCustomP2Y = p2y;
-                    _settings.BrakeCurveType = ResponseCurveType.Custom;
-                    CmbBrakeCurveType.SelectedItem = ResponseCurveType.Custom;
-                    TxtBrakeCurveDescription.Text = ResponseCurves.GetDescription(ResponseCurveType.Custom);
-
-                    _settings.SyncToActiveProfile();
-                    _settings.Save();
-                    DrawBrakeCurveEditor();
-                }
-            }
+            FlushSave();
         }
-
-        private void BtnSaveBrakeCurvePreset_Click(object sender, RoutedEventArgs e) => BtnUniversalSave_Click(sender, e);
 
         #endregion
 
@@ -2792,8 +2725,8 @@ namespace KeyTrigger
                 {
                     X1 = 0, Y1 = height * (1.0 - ratio),
                     X2 = width, Y2 = height * (1.0 - ratio),
-                    Stroke = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                    StrokeDashArray = new DoubleCollection { 3, 3 }
+                    Stroke = Palette.WhiteA14,
+                    StrokeDashArray = Palette.Dash3
                 };
                 SteerCurveEditorCanvas.Children.Add(hLine);
 
@@ -2801,8 +2734,8 @@ namespace KeyTrigger
                 {
                     X1 = width * ratio, Y1 = 0,
                     X2 = width * ratio, Y2 = height,
-                    Stroke = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
-                    StrokeDashArray = new DoubleCollection { 3, 3 }
+                    Stroke = Palette.WhiteA14,
+                    StrokeDashArray = Palette.Dash3
                 };
                 SteerCurveEditorCanvas.Children.Add(vLine);
             }
@@ -2836,7 +2769,7 @@ namespace KeyTrigger
             {
                 X1 = 0, Y1 = height,
                 X2 = p1X, Y2 = p1Y,
-                Stroke = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                Stroke = Palette.WhiteA32,
                 StrokeThickness = 1.2
             };
             SteerCurveEditorCanvas.Children.Add(tang1);
@@ -2845,7 +2778,7 @@ namespace KeyTrigger
             {
                 X1 = width, Y1 = 0,
                 X2 = p2X, Y2 = p2Y,
-                Stroke = new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)),
+                Stroke = Palette.WhiteA32,
                 StrokeThickness = 1.2
             };
             SteerCurveEditorCanvas.Children.Add(tang2);
@@ -2855,7 +2788,7 @@ namespace KeyTrigger
             {
                 Width = 14, Height = 14,
                 Fill = Brushes.White,
-                Stroke = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)),
+                Stroke = Palette.WhiteA78,
                 StrokeThickness = 2,
                 Cursor = Cursors.Hand
             };
@@ -2867,17 +2800,14 @@ namespace KeyTrigger
             var dot2 = new Ellipse
             {
                 Width = 14, Height = 14,
-                Fill = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0)),
-                Stroke = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255)),
+                Fill = Palette.Silver,
+                Stroke = Palette.WhiteA78,
                 StrokeThickness = 2,
                 Cursor = Cursors.Hand
             };
             Canvas.SetLeft(dot2, p2X - 7);
             Canvas.SetTop(dot2, p2Y - 7);
             SteerCurveEditorCanvas.Children.Add(dot2);
-
-            if (TxtSteerCurveHandlesReadout != null)
-                TxtSteerCurveHandlesReadout.Text = $"P1 Center: ({_settings.SteerCustomP1X:F2}, {_settings.SteerCustomP1Y:F2}) • P2 Lock: ({_settings.SteerCustomP2X:F2}, {_settings.SteerCustomP2Y:F2})";
         }
 
         private void SteerCurveEditorCanvas_MouseDown(object sender, MouseButtonEventArgs e)
@@ -2903,7 +2833,6 @@ namespace KeyTrigger
             {
                 _settings.SteerCurveType = ResponseCurveType.Custom;
                 if (CmbSteerCurveType != null) CmbSteerCurveType.SelectedItem = ResponseCurveType.Custom;
-                if (TxtSteerCurveDescription != null) TxtSteerCurveDescription.Text = ResponseCurves.GetDescription(ResponseCurveType.Custom);
             }
 
             UpdateDraggedSteerHandle(pos, width, height);
@@ -2924,6 +2853,12 @@ namespace KeyTrigger
         {
             _draggingSteerHandle = 0;
             SteerCurveEditorCanvas.ReleaseMouseCapture();
+            FlushSave();
+        }
+
+        private void SteerCurveEditorCanvas_LostMouseCapture(object sender, MouseEventArgs e)
+        {
+            FlushSave();
         }
 
         private void UpdateDraggedSteerHandle(Point pos, double width, double height)
@@ -2945,8 +2880,6 @@ namespace KeyTrigger
             DrawSteerCurveEditor();
             SyncActiveProfileFromSliders();
         }
-
-        private void BtnSaveSteerCurvePreset_Click(object sender, RoutedEventArgs e) => BtnUniversalSave_Click(sender, e);
 
         #endregion
 

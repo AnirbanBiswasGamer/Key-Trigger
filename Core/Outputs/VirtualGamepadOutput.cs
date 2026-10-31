@@ -6,7 +6,8 @@ using Nefarius.ViGEm.Client.Targets.Xbox360;
 
 namespace KeyTrigger.Core.Outputs
 {
-    public class VirtualGamepadOutput : IThrottleOutput
+    // Latency-critical: one SubmitReport per logical update, and nothing slower than one driver call inside _syncLock.
+    public sealed class VirtualGamepadOutput : IDisposable
     {
         private ViGEmClient? _client;
         private IXbox360Controller? _controller;
@@ -19,6 +20,7 @@ namespace KeyTrigger.Core.Outputs
         private byte _lastLt = 0;
         private short _lastSteer = 0;
         private long _lastReportTimestamp = 0;
+        private static readonly long HeartbeatTicks = System.Diagnostics.Stopwatch.Frequency * 45 / 1000;
 
         private bool _lsUp = false;
         private bool _lsDown = false;
@@ -47,10 +49,19 @@ namespace KeyTrigger.Core.Outputs
             { "Guide", Xbox360Button.Guide }
         };
 
-        public OutputMode Mode => OutputMode.VirtualGamepad;
-        public string Name => "Virtual Xbox Controller (ViGEm 1000Hz)";
         public bool IsAvailable => _isAvailable;
         public string StatusMessage => _statusMessage;
+
+        public bool HasPressedButtons
+        {
+            get
+            {
+                lock (_syncLock)
+                {
+                    return _pressedButtons.Count > 0 || _lsUp || _lsDown || _rsUp || _rsDown || _rsLeft || _rsRight;
+                }
+            }
+        }
 
         public int UserIndex
         {
@@ -72,7 +83,24 @@ namespace KeyTrigger.Core.Outputs
                     _client?.Dispose();
                     _client = new ViGEmClient();
                     _controller = _client.CreateXbox360Controller();
+
+                    // Every Set* call would otherwise send its own report, so one Update() reached the game as
+                    // four half-applied states. We always call SubmitReport() ourselves.
+                    _controller.AutoSubmitReport = false;
                     _controller.Connect();
+
+                    // Until a report changes something, XInput shows small non-zero values on all four stick axes
+                    // (about 10%, seen on a real PC), which a game with a small deadzone reads as steering. A neutral
+                    // report alone doesn't clear it, so nudge one axis and then send the neutral report.
+                    _controller.ResetReport();
+                    _controller.SetAxisValue(Xbox360Axis.LeftThumbX, 1);
+                    _controller.SubmitReport();
+                    _controller.ResetReport();
+                    _controller.SubmitReport();
+                    _lastRt = 0;
+                    _lastLt = 0;
+                    _lastSteer = 0;
+                    _lastReportTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
                     int userIdx = -1;
                     try { userIdx = _controller.UserIndex; } catch { }
                     _isAvailable = true;
@@ -128,8 +156,10 @@ namespace KeyTrigger.Core.Outputs
 
                     long now = System.Diagnostics.Stopwatch.GetTimestamp();
 
-                    // Ultra-low latency: Submit immediately on any value change, or at least every 50ms heartbeat
-                    if (rt != _lastRt || lt != _lastLt || steerVal != _lastSteer || (now - _lastReportTimestamp) > System.Diagnostics.Stopwatch.Frequency / 20)
+                    // Submit immediately on any value change, and resend at least every 50 ms as a heartbeat: ViGEmBus
+                    // drops a report when the game's side has no request waiting, and this is what resends it. The
+                    // threshold is 45 ms so the engine's 25 ms idle ticks still land a resend by ~50 ms.
+                    if (rt != _lastRt || lt != _lastLt || steerVal != _lastSteer || (now - _lastReportTimestamp) >= HeartbeatTicks)
                     {
                         _lastRt = rt;
                         _lastLt = lt;
@@ -287,13 +317,34 @@ namespace KeyTrigger.Core.Outputs
             }
         }
 
-        public void Reset()
+        // Releases everything (triggers, both sticks, all buttons) in a single report
+        public void ResetToNeutral()
         {
-            _lastRt = 255; // Force state change
-            _lastLt = 255;
-            _lastSteer = -1;
-            Update(0.0, 0.0, 0.0);
-            ResetButtons();
+            if (!_isAvailable || _controller == null) return;
+
+            lock (_syncLock)
+            {
+                try
+                {
+                    _lsUp = false;
+                    _lsDown = false;
+                    _rsUp = false;
+                    _rsDown = false;
+                    _rsLeft = false;
+                    _rsRight = false;
+                    _pressedButtons.Clear();
+                    _controller.ResetReport();
+                    _controller.SubmitReport();
+                    _lastRt = 0;
+                    _lastLt = 0;
+                    _lastSteer = 0;
+                    _lastReportTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+                }
+                catch
+                {
+                    // Ignore transient write errors
+                }
+            }
         }
 
         public void Dispose()
@@ -304,7 +355,7 @@ namespace KeyTrigger.Core.Outputs
                 {
                     if (_controller != null)
                     {
-                        Reset();
+                        ResetToNeutral();
                         _controller.Disconnect();
                         _controller = null;
                     }

@@ -33,20 +33,24 @@ namespace KeyTrigger
         {
             try
             {
-                var current = Process.GetCurrentProcess();
+                using var current = Process.GetCurrentProcess();
                 var list = Process.GetProcessesByName(current.ProcessName);
-                if (list.Length <= 1)
+                if (list.Length <= 1 && !current.ProcessName.Equals("KeyTrigger", StringComparison.OrdinalIgnoreCase))
                 {
+                    foreach (var p in list) p.Dispose();
                     list = Process.GetProcessesByName("KeyTrigger");
                 }
 
                 foreach (var p in list)
                 {
-                    if (p.Id != current.Id && p.MainWindowHandle != IntPtr.Zero)
+                    using (p)
                     {
-                        ShowWindow(p.MainWindowHandle, SW_RESTORE);
-                        SetForegroundWindow(p.MainWindowHandle);
-                        break;
+                        if (p.Id != current.Id && p.MainWindowHandle != IntPtr.Zero)
+                        {
+                            ShowWindow(p.MainWindowHandle, SW_RESTORE);
+                            SetForegroundWindow(p.MainWindowHandle);
+                            break;
+                        }
                     }
                 }
             }
@@ -89,7 +93,8 @@ namespace KeyTrigger
                         {
                             FileName = exePath,
                             UseShellExecute = true,
-                            Verb = "runas"
+                            Verb = "runas",
+                            Arguments = string.Join(" ", e.Args.Select(a => $"\"{a}\""))
                         };
                         Process.Start(psi);
                         Current.Shutdown();
@@ -111,16 +116,38 @@ namespace KeyTrigger
 
             DispatcherUnhandledException += (s, args) =>
             {
-                File.WriteAllText("crash.log", args.Exception.ToString());
+                WriteCrashLog(args.Exception.ToString());
                 MessageBox.Show(args.Exception.ToString(), "Key Trigger Error", MessageBoxButton.OK, MessageBoxImage.Error);
             };
 
             AppDomain.CurrentDomain.UnhandledException += (s, args) =>
             {
-                File.WriteAllText("crash.log", args.ExceptionObject?.ToString());
+                WriteCrashLog(args.ExceptionObject?.ToString());
             };
 
+            // --diag writes keyboard hook health and focus changes to keytrigger-diag-*.log next to the exe
+            if (e.Args.Any(a => a.Equals("--diag", StringComparison.OrdinalIgnoreCase)))
+            {
+                Core.Utils.DiagLog.Start(Path.Combine(AppContext.BaseDirectory, $"keytrigger-diag-{DateTime.Now:yyyyMMdd-HHmmss}.log"));
+            }
+
+            // Avoid blocking full garbage collections, which would pause the keyboard hook thread while Windows waits on it
+            System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
+
             base.OnStartup(e);
+        }
+
+        // Next to the exe: a relative path would land in the working directory, which can be System32 when elevated
+        private static void WriteCrashLog(string? text)
+        {
+            try
+            {
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "crash.log"), text ?? string.Empty);
+            }
+            catch
+            {
+                // Nothing more we can do while crashing
+            }
         }
 
         protected override void OnExit(ExitEventArgs e)

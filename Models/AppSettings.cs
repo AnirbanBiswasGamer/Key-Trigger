@@ -370,15 +370,7 @@ namespace KeyTrigger.Models
 
             if (active.ButtonMappings != null && active.ButtonMappings.Count > 0)
             {
-                ButtonMappings = active.ButtonMappings.ConvertAll(m => new ControllerButtonMapping
-                {
-                    ButtonId = m.ButtonId,
-                    DisplayName = m.DisplayName,
-                    Category = m.Category,
-                    DefaultRole = m.DefaultRole,
-                    VkCode = m.VkCode,
-                    KeyName = m.KeyName
-                });
+                ButtonMappings = active.ButtonMappings.ConvertAll(m => m.Clone());
                 EnsureDefaultButtonMappings();
             }
             else
@@ -450,15 +442,7 @@ namespace KeyTrigger.Models
 
                 if (ButtonMappings != null && ButtonMappings.Count > 0)
                 {
-                    active.ButtonMappings = ButtonMappings.ConvertAll(m => new ControllerButtonMapping
-                    {
-                        ButtonId = m.ButtonId,
-                        DisplayName = m.DisplayName,
-                        Category = m.Category,
-                        DefaultRole = m.DefaultRole,
-                        VkCode = m.VkCode,
-                        KeyName = m.KeyName
-                    });
+                    active.ButtonMappings = ButtonMappings.ConvertAll(m => m.Clone());
                 }
             }
         }
@@ -471,7 +455,14 @@ namespace KeyTrigger.Models
             return Profiles.FirstOrDefault(p => p.Id == ActiveProfileId) ?? Profiles[0];
         }
 
-        private static string GetConfigPath()
+        // Each new options instance starts with an empty metadata cache, so creating one per save redid the reflection every time
+        private static readonly JsonSerializerOptions s_writeOptions = new() { WriteIndented = true };
+        private static string? s_configPath;
+
+        // Resolved (and migrated) once: saves happen often and the path can't change while running
+        private static string GetConfigPath() => s_configPath ??= ResolveConfigPath();
+
+        private static string ResolveConfigPath()
         {
             // Portable mode: Save settings.json alongside KeyTrigger.exe in the application directory
             string appDir = AppContext.BaseDirectory;
@@ -507,8 +498,8 @@ namespace KeyTrigger.Models
                     var settings = JsonSerializer.Deserialize<AppSettings>(json);
                     if (settings != null)
                     {
+                        // SyncFromActiveProfile rebuilds ButtonMappings (defaults filled in) from the active profile
                         settings.EnsureDefaultProfiles();
-                        settings.EnsureDefaultButtonMappings();
                         settings.SyncFromActiveProfile();
                         return settings;
                     }
@@ -529,10 +520,16 @@ namespace KeyTrigger.Models
         {
             try
             {
+                // Write a temp file and swap it in, so a crash or power cut mid-write can't leave a truncated
+                // settings.json (Load would fail to parse it and silently reset every profile and binding)
                 string path = GetConfigPath();
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                string json = JsonSerializer.Serialize(this, options);
-                File.WriteAllText(path, json);
+                string tmpPath = path + ".tmp";
+                using (var stream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    JsonSerializer.Serialize(stream, this, s_writeOptions);
+                    stream.Flush(true);
+                }
+                File.Move(tmpPath, path, true);
             }
             catch
             {
@@ -561,5 +558,18 @@ namespace KeyTrigger.Models
         public string DefaultRole { get; set; } = string.Empty;
         public int VkCode { get; set; } = 0;
         public string KeyName { get; set; } = "None";
+
+        public ControllerButtonMapping Clone()
+        {
+            return new ControllerButtonMapping
+            {
+                ButtonId = ButtonId,
+                DisplayName = DisplayName,
+                Category = Category,
+                DefaultRole = DefaultRole,
+                VkCode = VkCode,
+                KeyName = KeyName
+            };
+        }
     }
 }
