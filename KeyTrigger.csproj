@@ -17,6 +17,9 @@
     <Product>Key Trigger</Product>
     <Description>Progressive Keyboard-to-Analog Xbox 360 Controller Trigger &amp; Steering Emulator</Description>
     <Company>Key Trigger</Company>
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>

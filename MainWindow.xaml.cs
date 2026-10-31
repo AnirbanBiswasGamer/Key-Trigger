@@ -1060,6 +1060,14 @@ namespace KeyTrigger
 
         private void NavigateToPage(string pageName)
         {
+            if (_captureTarget != CaptureTarget.None)
+            {
+                var target = _captureTarget;
+                _captureTarget = CaptureTarget.None;
+                _engine.KeyboardHook.IsKeyCaptureActive = false;
+                CancelCapture(target);
+            }
+
             _currentPage = pageName;
             UpdateTelemetryTimer();
 
@@ -1592,13 +1600,32 @@ namespace KeyTrigger
             if (_labelBrushBeforeCapture != null) label.Foreground = _labelBrushBeforeCapture;
         }
 
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            base.OnPreviewKeyDown(e);
+
+            if (_captureTarget != CaptureTarget.None)
+            {
+                Key key = (e.Key == Key.System) ? e.SystemKey : e.Key;
+                int vkCode = KeyInterop.VirtualKeyFromKey(key);
+                if (vkCode != 0)
+                {
+                    e.Handled = true;
+                    OnKeyCaptured(vkCode);
+                }
+            }
+        }
+
         private void OnKeyCaptured(int vkCode)
         {
             Dispatcher.InvokeAsync(() =>
             {
-                string keyName = KeyNameHelper.GetKeyName(vkCode);
                 var target = _captureTarget;
+                if (target == CaptureTarget.None) return;
+
                 _captureTarget = CaptureTarget.None;
+                _engine.KeyboardHook.IsKeyCaptureActive = false;
+                string keyName = KeyNameHelper.GetKeyName(vkCode);
 
                 if (target == CaptureTarget.ProfileHotkey)
                 {
@@ -1611,18 +1638,25 @@ namespace KeyTrigger
                     RenderProfileChips();
                     RenderProfileCards();
                 }
-                else if (target == CaptureTarget.RemapButton && !string.IsNullOrEmpty(_capturingRemapButtonId))
+                else if (target == CaptureTarget.RemapButton)
                 {
-                    string btnId = _capturingRemapButtonId;
-                    _capturingRemapButtonId = null;
-
-                    var mapping = _settings.ButtonMappings.FirstOrDefault(m => m.ButtonId.Equals(btnId, StringComparison.OrdinalIgnoreCase));
-                    if (mapping != null)
+                    if (!string.IsNullOrEmpty(_capturingRemapButtonId))
                     {
-                        mapping.VkCode = vkCode;
-                        mapping.KeyName = keyName;
-                        _settings.SyncToActiveProfile();
-                        SaveNow();
+                        string btnId = _capturingRemapButtonId;
+                        _capturingRemapButtonId = null;
+
+                        var mapping = _settings.ButtonMappings.FirstOrDefault(m => m.ButtonId.Equals(btnId, StringComparison.OrdinalIgnoreCase));
+                        if (mapping != null)
+                        {
+                            mapping.VkCode = vkCode;
+                            mapping.KeyName = keyName;
+                            _settings.SyncToActiveProfile();
+                            SaveNow();
+                        }
+                    }
+                    else
+                    {
+                        _capturingRemapButtonId = null;
                     }
 
                     RenderRemapList();
@@ -1803,10 +1837,19 @@ namespace KeyTrigger
                     var currentMapping = mapping;
                     bindBtn.Click += (s, e) =>
                     {
-                        // A misclicked row would otherwise stay waiting with no way out (Escape is captured as a
-                        // key), so another remap row takes over the pending capture. The hook is already armed.
+                        // Clicking the currently waiting row again toggles it off / cancels capture.
+                        // Clicking another row takes over the pending capture while keeping the hook armed.
                         if (_captureTarget == CaptureTarget.RemapButton)
                         {
+                            if (_capturingRemapButtonId == currentMapping.ButtonId)
+                            {
+                                _captureTarget = CaptureTarget.None;
+                                _capturingRemapButtonId = null;
+                                _engine.KeyboardHook.IsKeyCaptureActive = false;
+                                RenderRemapList();
+                                return;
+                            }
+
                             _capturingRemapButtonId = currentMapping.ButtonId;
                             RenderRemapList();
                             return;

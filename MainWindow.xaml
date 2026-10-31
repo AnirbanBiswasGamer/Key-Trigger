@@ -568,6 +568,7 @@
                                 <TextBlock Text="KEY" FontSize="15" FontWeight="Black" Foreground="{StaticResource TextPrimary}" />
                                 <TextBlock Text="TRIGGER" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource AccentPrimary}" Margin="4,0,0,0" />
                             </StackPanel>
+                            <TextBlock Text="v1.1.0" FontSize="10" FontWeight="SemiBold" Foreground="#64748B" Margin="1,1,0,0" />
                         </StackPanel>
                     </StackPanel>
 

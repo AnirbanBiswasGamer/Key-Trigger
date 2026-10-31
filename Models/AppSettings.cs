@@ -173,7 +173,8 @@ namespace KeyTrigger.Models
                         BrakeReleaseTimeSeconds = 0.15,
                         BrakeCurveType = ResponseCurveType.Progressive,
                         MinBrake = 0.0,
-                        MaxBrake = 1.0
+                        MaxBrake = 1.0,
+                        ButtonMappings = GetDefaultButtonMappings()
                     },
                     new ThrottleProfile
                     {
@@ -190,7 +191,8 @@ namespace KeyTrigger.Models
                         BrakeReleaseTimeSeconds = 0.20,
                         BrakeCurveType = ResponseCurveType.SmoothStep,
                         MinBrake = 0.0,
-                        MaxBrake = 1.0
+                        MaxBrake = 1.0,
+                        ButtonMappings = GetDefaultButtonMappings()
                     },
                     new ThrottleProfile
                     {
@@ -207,7 +209,8 @@ namespace KeyTrigger.Models
                         BrakeReleaseTimeSeconds = 0.35,
                         BrakeCurveType = ResponseCurveType.Exponential,
                         MinBrake = 0.0,
-                        MaxBrake = 0.75 // Capped to prevent braking wheel lockup
+                        MaxBrake = 0.75, // Capped to prevent braking wheel lockup
+                        ButtonMappings = GetDefaultButtonMappings()
                     },
                     new ThrottleProfile
                     {
@@ -224,9 +227,23 @@ namespace KeyTrigger.Models
                         BrakeReleaseTimeSeconds = 0.55,
                         BrakeCurveType = ResponseCurveType.SmootherStep,
                         MinBrake = 0.0,
-                        MaxBrake = 1.0
+                        MaxBrake = 1.0,
+                        ButtonMappings = GetDefaultButtonMappings()
                     }
                 };
+            }
+            else
+            {
+                // Ensure existing profiles preserve and migrate button mappings
+                foreach (var profile in Profiles)
+                {
+                    if (profile.ButtonMappings == null || profile.ButtonMappings.Count == 0)
+                    {
+                        profile.ButtonMappings = (ButtonMappings != null && ButtonMappings.Count > 0)
+                            ? ButtonMappings.ConvertAll(m => m.Clone())
+                            : GetDefaultButtonMappings();
+                    }
+                }
             }
 
             if (string.IsNullOrEmpty(ActiveProfileId) || !Profiles.Any(p => p.Id == ActiveProfileId))
@@ -373,9 +390,15 @@ namespace KeyTrigger.Models
                 ButtonMappings = active.ButtonMappings.ConvertAll(m => m.Clone());
                 EnsureDefaultButtonMappings();
             }
+            else if (ButtonMappings != null && ButtonMappings.Count > 0)
+            {
+                EnsureDefaultButtonMappings();
+                active.ButtonMappings = ButtonMappings.ConvertAll(m => m.Clone());
+            }
             else
             {
                 ButtonMappings = GetDefaultButtonMappings();
+                active.ButtonMappings = ButtonMappings.ConvertAll(m => m.Clone());
             }
         }
 
